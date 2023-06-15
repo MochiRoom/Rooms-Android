@@ -2,6 +2,7 @@
 
 package com.burnout.rooms
 
+import android.annotation.SuppressLint
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -25,17 +26,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DismissibleDrawerSheet
-import androidx.compose.material3.DismissibleNavigationDrawer
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,6 +54,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -69,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.burnout.rooms.ui.theme.RoomsTheme
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -99,7 +97,7 @@ data class Message (
 
     // Convert Message to JSON String
     override fun toString(): String {
-        return "{\"author\":\"$author\",\"room\":$room,\"date\":$date,\"data\":\"$data\"}"
+        return "{\"author\":$author,\"room\":$room,\"date\":$date,\"data\":\"$data\"}"
     }
 }
 
@@ -118,19 +116,29 @@ fun time(): Long {
 // Main Activity
 class MainActivity : ComponentActivity() {
     // Networking
-    private var socket = OkHttpClient().newWebSocket(Request.Builder().url("ws://chat.toaster.hu:443").build(), Listener(this))
+    private var socket: WebSocket? = null
     var isConnected = false
 
     private var userID = (0..8191).random()
-    var rooms = SnapshotStateList<Room>()
+    var rooms = SnapshotStateMap<Int, Room>()
 
     // onCreate Function
+    @SuppressLint("CoroutineCreationDuringComposition")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
             RoomsTheme {
                 Surface(Modifier.fillMaxSize(), color=MaterialTheme.colorScheme.background) {
+                    val connectionManager = rememberCoroutineScope()
+                    connectionManager.launch {
+                        while (true) {
+                            delay(10000)
+                            if (!isConnected)
+                                socket = OkHttpClient().newWebSocket(Request.Builder().url(getString(R.string.server_url)).build(),Listener(this@MainActivity))
+                        }
+                    }
+
                     val drawerState = rememberDrawerState(DrawerValue.Open)
                     val scope = rememberCoroutineScope()
 
@@ -139,10 +147,10 @@ class MainActivity : ComponentActivity() {
                     var devmode = 0
 
                     // Main App Drawer
-                    DismissibleNavigationDrawer(
+                    ModalNavigationDrawer(
                         drawerState = drawerState,
                         drawerContent = {
-                            DismissibleDrawerSheet {
+                            ModalDrawerSheet {
                                 Box(Modifier.fillMaxSize()) {
                                     OutlinedCard(
                                         Modifier
@@ -198,8 +206,11 @@ class MainActivity : ComponentActivity() {
                                                 bottom = 50.dp
                                             )
                                     ) {
+                                        val entries = rooms.toList()
                                         LazyColumn {
-                                            itemsIndexed(rooms) { id, item ->
+                                            itemsIndexed(entries) { id, entry ->
+                                                val (_, room) = entry
+
                                                 NavigationDrawerItem(
                                                     icon = {
                                                         Icon(
@@ -207,7 +218,7 @@ class MainActivity : ComponentActivity() {
                                                             contentDescription = null
                                                         )
                                                     },
-                                                    label = { Text(item.name) },
+                                                    label = { Text(room.name) },
                                                     selected = id == selectedItem,
                                                     onClick = {
                                                         selectedItem = id
@@ -255,34 +266,34 @@ class MainActivity : ComponentActivity() {
     // DevMode Screen
     @Composable
     private fun DevMode() {
-        Text("This is the DevMode Screen", Modifier.fillMaxSize().wrapContentSize(Alignment.Center))
+        Text("This is the DevMode Screen",
+            Modifier
+                .fillMaxSize()
+                .wrapContentSize(Alignment.Center))
     }
 
     // Join/Create Room
     @Composable
     private fun AddRoom(scope: CoroutineScope, drawerState: DrawerState) {
-        var mode by rememberSaveable { mutableStateOf(false) }
-
-        var roomNumber by rememberSaveable { mutableStateOf("") }
-        var yourName by rememberSaveable { mutableStateOf("") }
+        var roomNumber by rememberSaveable { mutableStateOf(0) }
+        var roomName by rememberSaveable { mutableStateOf("") }
 
         Column(modifier = Modifier
             .fillMaxSize()
             .padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
 
-            AssistChip(
-                onClick = { mode = !mode },
-                label = { Text(if (mode) "Create" else "Join") },
-                leadingIcon = { if (!mode) Icon(Icons.Default.Favorite, null) else Icon(Icons.Default.Add, null) },
+
+            OutlinedCard(
+                content = { Text("Add Room") },
                 modifier = Modifier
                     .fillMaxWidth(0.5f)
                     .padding(top = 8.dp)
             )
 
             OutlinedTextField(
-                value = roomNumber,
-                onValueChange = { if (it.length <= 4) roomNumber = it },
-                label = { Text("Room Number") },
+                value = roomNumber.toString(),
+                onValueChange = { if(it.isNotBlank()) roomNumber = it.toInt() },
+                label = { Text("Room ID") },
                 placeholder = { Text("1234") },
                 singleLine = true,
 
@@ -299,10 +310,10 @@ class MainActivity : ComponentActivity() {
             )
 
             OutlinedTextField(
-                value = yourName,
-                onValueChange = { yourName = it },
-                label = { Text("Display Name") },
-                placeholder = { Text("Weeb Miglos") },
+                value = roomName,
+                onValueChange = { roomName = it },
+                label = { Text("Room Display Name") },
+                placeholder = { Text("City Center") },
 
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(
@@ -318,14 +329,14 @@ class MainActivity : ComponentActivity() {
             )
 
             Button (
-                content = { Text(if (!mode) "Join Room" else "Create Room", fontSize = 32.sp) },
+                content = { Text("Add Room") },
                 onClick = {
-                    rooms += Room(roomNumber.toInt(), yourName)
+                    rooms[roomNumber] = Room(roomNumber, roomName)
 
                     scope.launch { drawerState.open() }
                     //selectedItem = rooms.size-1
                 },
-                enabled = true,
+                enabled = !rooms.containsKey(roomNumber),
 
                 modifier = Modifier
                     .fillMaxSize()
@@ -342,36 +353,47 @@ class MainActivity : ComponentActivity() {
 
         Column(modifier = Modifier.fillMaxSize())
         {
-            if (!isConnected)
-                PopupMessage(stringResource(R.string.connecting))
+           if (!isConnected)
+            PopupMessage(stringResource(R.string.connecting))
 
             // Chat Box
             LazyColumn {
-                items(rooms[currentRoom].messages) { message ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 4.dp)
-                    ) {
-                        //Icon(Icons.Default.AccountCircle, null, Modifier.padding(start=16.dp) )
-                        OutlinedCard(Modifier.padding(top=8.dp, start=8.dp)) {
-                            Text(message.author.toString(), Modifier.padding(start=4.dp,end=4.dp,top=2.dp,bottom=2.dp))
-                        }
+                rooms[currentRoom]?.let {
+                    items(it.messages) { message ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 4.dp)
+                        ) {
+                            //Icon(Icons.Default.AccountCircle, null, Modifier.padding(start=16.dp) )
+                            OutlinedCard(Modifier.padding(top=8.dp, start=8.dp)) {
+                                Text(message.author.toString(), Modifier.padding(start=4.dp,end=4.dp,top=2.dp,bottom=2.dp))
+                            }
 
-                        Text(
-                            text = message.data,
-                            textAlign = TextAlign.Start,
-                            modifier = Modifier
-                                .padding(start=8.dp, top=8.dp)
-                        )
+                            Text(
+                                text = message.data,
+                                textAlign = TextAlign.Start,
+                                modifier = Modifier
+                                    .padding(start=8.dp, top=8.dp)
+                            )
+                        }
                     }
                 }
             }
 
             fun send() {
                 if (isConnected) {
-                    if (text != "")
-                        socket.send(Message(userID, currentRoom, time(), text).toString())
+                    if (text != "") {
+                        // Is Socket Available ?
+                            socket?.let { it1 ->
+                                // Is Room Available ?
+                                rooms[currentRoom]?.let { it2 ->
+                                    // Send Message
+                                    it1.send(Message(userID, it2.id, time(), text).toString())
+                                }
+                            }
+                    }
+
                     text = ""
                 }
             }
@@ -416,7 +438,9 @@ class Listener(mainIn: MainActivity) : WebSocketListener() {
     override fun onMessage(webSocket: WebSocket, text: String) {
         Log.d("WEBSOCKET", "Received Message: $text")
         val msg = Message.fromJson(text)
-        main.rooms[msg.room].messages += msg
+
+        if (main.rooms.size > msg.room)
+            main.rooms[msg.room]?.let { it1 -> it1.messages += msg }
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
