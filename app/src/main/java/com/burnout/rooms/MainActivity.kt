@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3Api::class)
 
 package com.burnout.rooms
 
@@ -89,6 +89,7 @@ data class Message (
 
     companion object {
         // Convert JSON String to Message
+        @Suppress("UnnecessaryOptInAnnotation")
         @OptIn(ExperimentalSerializationApi::class)
         fun fromJson(json: String): Message {
             return Json.decodeFromString(json)
@@ -143,8 +144,9 @@ class MainActivity : ComponentActivity() {
                     val scope = rememberCoroutineScope()
 
                     var selectedItem by rememberSaveable { mutableStateOf(-1) }
+                    var selectedRoom by rememberSaveable { mutableStateOf(0) }
 
-                    var devmode = 0
+                    var devMode = 0
 
                     // Main App Drawer
                     ModalNavigationDrawer(
@@ -166,11 +168,11 @@ class MainActivity : ComponentActivity() {
                                                     .padding(10.dp)
                                                     .size(32.dp)
                                                     .clickable {
-                                                        if (devmode > 10) {
+                                                        if (devMode > 10) {
                                                             selectedItem = -2
-                                                            devmode = 0
+                                                            devMode = 0
                                                         }
-                                                        devmode++
+                                                        devMode++
                                                     }
                                             )
 
@@ -209,7 +211,10 @@ class MainActivity : ComponentActivity() {
                                         val entries = rooms.toList()
                                         LazyColumn {
                                             itemsIndexed(entries) { id, entry ->
-                                                val (_, room) = entry
+                                                val (roomID, room) = entry
+
+                                                if (selectedItem == id)
+                                                    selectedRoom = roomID
 
                                                 NavigationDrawerItem(
                                                     icon = {
@@ -254,7 +259,7 @@ class MainActivity : ComponentActivity() {
                             when (selectedItem) {
                                 -2 -> DevMode()
                                 -1 -> AddRoom(scope, drawerState)
-                                else -> if (selectedItem < 0) selectedItem = -1 else RoomChat(selectedItem)
+                                else -> if (selectedItem < 0) selectedItem = -1 else RoomChat(selectedRoom)
                             }
                         }
                     )
@@ -281,14 +286,6 @@ class MainActivity : ComponentActivity() {
         Column(modifier = Modifier
             .fillMaxSize()
             .padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-
-
-            OutlinedCard(
-                content = { Text("Add Room") },
-                modifier = Modifier
-                    .fillMaxWidth(0.5f)
-                    .padding(top = 8.dp)
-            )
 
             OutlinedTextField(
                 value = roomNumber.toString(),
@@ -381,6 +378,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // Send Message
             fun send() {
                 if (isConnected) {
                     if (text != "") {
@@ -439,8 +437,7 @@ class Listener(mainIn: MainActivity) : WebSocketListener() {
         Log.d("WEBSOCKET", "Received Message: $text")
         val msg = Message.fromJson(text)
 
-        if (main.rooms.size > msg.room)
-            main.rooms[msg.room]?.let { it1 -> it1.messages += msg }
+        main.rooms[msg.room]?.let { it1 -> it1.messages += msg }
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
