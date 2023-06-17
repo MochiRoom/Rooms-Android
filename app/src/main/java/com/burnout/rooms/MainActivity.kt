@@ -1,4 +1,6 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3Api::class,
+    ExperimentalComposeUiApi::class
+)
 
 package com.burnout.rooms
 
@@ -12,16 +14,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -29,9 +33,6 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,7 +57,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -86,7 +90,6 @@ data class Message (
     val date: Long = 0,
     val data: String = ""
 ) {
-
     companion object {
         // Convert JSON String to Message
         @Suppress("UnnecessaryOptInAnnotation")
@@ -123,20 +126,29 @@ class MainActivity : ComponentActivity() {
     private var userID = (0..8191).random()
     var rooms = SnapshotStateMap<Int, Room>()
 
+    private var keyboardController: SoftwareKeyboardController? = null
+
     // onCreate Function
     @SuppressLint("CoroutineCreationDuringComposition")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
-            RoomsTheme {
+
+            RoomsTheme(dynamicColor = false) {
                 Surface(Modifier.fillMaxSize(), color=MaterialTheme.colorScheme.background) {
+                    keyboardController = LocalSoftwareKeyboardController.current
+
                     val connectionManager = rememberCoroutineScope()
                     connectionManager.launch {
                         while (true) {
-                            delay(10000)
                             if (!isConnected)
-                                socket = OkHttpClient().newWebSocket(Request.Builder().url(getString(R.string.server_url)).build(),Listener(this@MainActivity))
+                                socket = OkHttpClient().newWebSocket(
+                                    Request.Builder().url(getString(R.string.server_url)).build(),
+                                    Listener(this@MainActivity)
+                                )
+
+                            delay(10000)
                         }
                     }
 
@@ -188,6 +200,7 @@ class MainActivity : ComponentActivity() {
                                                 onClick = {
                                                     selectedItem = -1
                                                     scope.launch { drawerState.close() }
+                                                    keyboardController?.hide()
                                                 },
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -228,6 +241,7 @@ class MainActivity : ComponentActivity() {
                                                     onClick = {
                                                         selectedItem = id
                                                         scope.launch { drawerState.close() }
+                                                        keyboardController?.hide()
                                                     },
                                                     modifier = Modifier.padding(
                                                         top = (if (id == 0) 12 else 0).dp,
@@ -271,10 +285,19 @@ class MainActivity : ComponentActivity() {
     // DevMode Screen
     @Composable
     private fun DevMode() {
-        Text("This is the DevMode Screen",
-            Modifier
-                .fillMaxSize()
-                .wrapContentSize(Alignment.Center))
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally){
+            Text(
+                text = "DevMode Screen",
+                modifier = Modifier.padding(8.dp)
+            )
+
+            Button(
+                content = { Text("Re-Create Activity") },
+                onClick = { super.recreate() },
+                modifier = Modifier.padding(8.dp)
+            )
+        }
+
     }
 
     // Join/Create Room
@@ -331,6 +354,7 @@ class MainActivity : ComponentActivity() {
                     rooms[roomNumber] = Room(roomNumber, roomName)
 
                     scope.launch { drawerState.open() }
+                    keyboardController?.hide()
                     //selectedItem = rooms.size-1
                 },
                 enabled = !rooms.containsKey(roomNumber),
@@ -347,14 +371,15 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun RoomChat(currentRoom: Int) {
         var text by rememberSaveable { mutableStateOf("") }
+        val lazyListState = rememberLazyListState()
 
-        Column(modifier = Modifier.fillMaxSize())
+        Box(modifier = Modifier.fillMaxSize())
         {
-           if (!isConnected)
-            PopupMessage(stringResource(R.string.connecting))
+//           if (!isConnected)
+//            PopupMessage(stringResource(R.string.connecting))
 
             // Chat Box
-            LazyColumn {
+            LazyColumn (state=lazyListState) {
                 rooms[currentRoom]?.let {
                     items(it.messages) { message ->
                         Row(
@@ -363,18 +388,30 @@ class MainActivity : ComponentActivity() {
                                 .padding(bottom = 4.dp)
                         ) {
                             //Icon(Icons.Default.AccountCircle, null, Modifier.padding(start=16.dp) )
-                            OutlinedCard(Modifier.padding(top=8.dp, start=8.dp)) {
-                                Text(message.author.toString(), Modifier.padding(start=4.dp,end=4.dp,top=2.dp,bottom=2.dp))
+                            OutlinedCard(Modifier.padding(top = 8.dp, start = 8.dp)) {
+                                Text(
+                                    message.author.toString(),
+                                    Modifier.padding(
+                                        start = 4.dp,
+                                        end = 4.dp,
+                                        top = 2.dp,
+                                        bottom = 2.dp
+                                    )
+                                )
                             }
 
                             Text(
                                 text = message.data,
                                 textAlign = TextAlign.Start,
                                 modifier = Modifier
-                                    .padding(start=8.dp, top=8.dp)
+                                    .padding(start = 8.dp, top = 8.dp)
                             )
                         }
                     }
+                }
+
+                item(key="Spacer") {
+                    Spacer(Modifier.height(64.dp))
                 }
             }
 
@@ -393,6 +430,8 @@ class MainActivity : ComponentActivity() {
                     }
 
                     text = ""
+
+                    keyboardController?.hide()
                 }
             }
 
@@ -428,6 +467,7 @@ class MainActivity : ComponentActivity() {
 
 class Listener(mainIn: MainActivity) : WebSocketListener() {
     private val main = mainIn
+
     override fun onOpen(webSocket: WebSocket, response: Response) {
         Log.d("WEBSOCKET", "Connection opened")
         main.isConnected = true
@@ -448,18 +488,6 @@ class Listener(mainIn: MainActivity) : WebSocketListener() {
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
         Log.w("WEBSOCKET", "Connection failure: ${t.message}")
         main.isConnected = false
-    }
-}
-
-@Composable
-fun PopupMessage(text: String) {
-    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Card(elevation = CardDefaults.cardElevation(defaultElevation = 10.dp), modifier=Modifier.padding(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                CircularProgressIndicator(modifier = Modifier.padding(4.dp))
-                Text(text, Modifier.padding(8.dp))
-            }
-        }
     }
 }
 
