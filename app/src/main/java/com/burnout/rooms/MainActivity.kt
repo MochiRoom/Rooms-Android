@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
@@ -46,11 +49,13 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -59,13 +64,16 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.burnout.rooms.ui.theme.RoomsTheme
@@ -82,13 +90,34 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 
+
+@Serializable
+data class User (
+    val id: Int = 0,
+    var name: String = "",
+        ) {
+    companion object {
+        // Convert JSON String to Message
+        @Suppress("UnnecessaryOptInAnnotation")
+        @OptIn(ExperimentalSerializationApi::class)
+        fun fromJson(json: String): User {
+            return Json.decodeFromString(json)
+        }
+    }
+
+    // Convert Message to JSON String
+    override fun toString(): String {
+        return "{\"id\":$id,\"name\":\"$name\"}"
+    }
+}
+
 // Basic Message Data Class
 @Serializable
 data class Message (
-    val author: Int = 0,
+    val data: String = "",
+    val author: User = User(),
     val room: Int = 0,
     val date: Long = 0,
-    val data: String = ""
 ) {
     companion object {
         // Convert JSON String to Message
@@ -101,14 +130,14 @@ data class Message (
 
     // Convert Message to JSON String
     override fun toString(): String {
-        return "{\"author\":$author,\"room\":$room,\"date\":$date,\"data\":\"$data\"}"
+        return "{\"author\":${author.toString()},\"room\":$room,\"date\":$date,\"data\":\"$data\"}"
     }
 }
 
 // Basic Room Data Class
 data class Room (
     val id: Int,
-    val name: String,
+    var name: String,
     val messages: SnapshotStateList<Message> = SnapshotStateList()
 )
 
@@ -123,7 +152,7 @@ class MainActivity : ComponentActivity() {
     private var socket: WebSocket? = null
     var isConnected = false
 
-    private var userID = (0..8191).random()
+    var me: User = User((0..8191).random(),"Miglos Weeb")
     var rooms = SnapshotStateMap<Int, Room>()
 
     private var keyboardController: SoftwareKeyboardController? = null
@@ -264,7 +293,84 @@ class MainActivity : ComponentActivity() {
                                             ) {
                                         Icon(Icons.Default.AccountCircle, null, Modifier.padding(4.dp))
 
-                                        Text("User ID: $userID", Modifier.padding(4.dp))
+                                        val openDialog = remember { mutableStateOf(false) }
+                                        val newName = remember { mutableStateOf(me.name) }
+                                        var isError by rememberSaveable { mutableStateOf(false) }
+
+                                        Text(text = "Username: ")
+                                        Text (
+                                            text = me.name,
+                                            style = TextStyle(textDecoration = TextDecoration.Underline),
+                                            modifier = Modifier.clickable { openDialog.value = true })
+
+                                        if (openDialog.value) {
+                                            AlertDialog(
+                                                onDismissRequest = { openDialog.value = false},
+                                                icon = {
+                                                    Row {
+                                                        Icon(Icons.Default.AccountCircle, null, Modifier.padding(end=8.dp))
+                                                        Text("Edit Username")
+                                                    }
+                                                },
+                                                title = null,
+                                                text = {
+                                                    OutlinedTextField(
+                                                        value = newName.value,
+                                                        onValueChange = {
+                                                            newName.value = it
+                                                            isError = newName.value.length > 16
+                                                            },
+                                                        label = { Text(if(isError)"Username*" else "Username") },
+                                                        placeholder = { Text("Miglos Weeb") },
+                                                        singleLine = true,
+                                                        supportingText = {
+                                                            Text(
+                                                                text = "Limit: ${newName.value.length}/16",
+                                                                textAlign = TextAlign.End,
+                                                                modifier = Modifier.fillMaxWidth()
+                                                            )
+                                                        },
+                                                        isError = isError,
+
+                                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                                        keyboardActions = KeyboardActions(
+                                                            onDone = {
+                                                                isError = newName.value.length > 16
+
+                                                                if (!isError) {
+                                                                    openDialog.value = false
+                                                                    me.name = newName.value
+                                                                }
+                                                            }
+                                                        ),
+
+                                                        modifier = Modifier
+                                                            .wrapContentWidth(Alignment.CenterHorizontally)
+                                                            .wrapContentHeight(Alignment.Top)
+                                                            .padding(top = 16.dp)
+                                                    )
+                                                },
+                                                confirmButton = {
+                                                    TextButton(
+                                                        onClick = {
+                                                            openDialog.value = false
+                                                            me.name = newName.value
+                                                        },
+                                                        enabled = !isError) {
+                                                        Text("Confirm")
+                                                    }
+                                                },
+                                                dismissButton = {
+                                                    TextButton(
+                                                        onClick = {
+                                                            openDialog.value = false
+                                                            newName.value = me.name
+                                                        }) {
+                                                        Text("Dismiss")
+                                                    }
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -383,21 +489,24 @@ class MainActivity : ComponentActivity() {
                 rooms[currentRoom]?.let {
                     items(it.messages) { message ->
                         Row(
-                            Modifier
+                            horizontalArrangement = if (message.author.id == me.id) Arrangement.End else Arrangement.Start,
+                            modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 4.dp)
-                        ) {
-                            //Icon(Icons.Default.AccountCircle, null, Modifier.padding(start=16.dp) )
-                            OutlinedCard(Modifier.padding(top = 8.dp, start = 8.dp)) {
-                                Text(
-                                    message.author.toString(),
-                                    Modifier.padding(
-                                        start = 4.dp,
-                                        end = 4.dp,
-                                        top = 2.dp,
-                                        bottom = 2.dp
+                                .padding(bottom = 4.dp)) {
+
+                            if (message.author.id != me.id) {
+                                //Icon(Icons.Default.AccountCircle, null, Modifier.padding(start=16.dp) )
+                                OutlinedCard(Modifier.padding(top = 8.dp, start = 8.dp)) {
+                                    Text(
+                                        message.author.name,
+                                        Modifier.padding(
+                                            start = 4.dp,
+                                            end = 4.dp,
+                                            top = 2.dp,
+                                            bottom = 2.dp
+                                        )
                                     )
-                                )
+                                }
                             }
 
                             Text(
@@ -424,7 +533,7 @@ class MainActivity : ComponentActivity() {
                                 // Is Room Available ?
                                 rooms[currentRoom]?.let { it2 ->
                                     // Send Message
-                                    it1.send(Message(userID, it2.id, time(), text).toString())
+                                    it1.send(Message(text, me, it2.id, time()).toString())
                                 }
                             }
                     }
@@ -460,6 +569,7 @@ class MainActivity : ComponentActivity() {
                     .wrapContentWidth(Alignment.CenterHorizontally)
                     .wrapContentHeight(Alignment.Bottom)
                     .padding(start = 8.dp, end = 8.dp)
+                    .heightIn(0.dp, 120.dp)
             )
         }
     }
