@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -33,6 +32,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -59,12 +59,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -80,66 +78,15 @@ import com.burnout.rooms.ui.theme.RoomsTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.json.Json
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-
-
-@Serializable
-data class User (
-    val id: Int = 0,
-    var name: String = "",
-        ) {
-    companion object {
-        // Convert JSON String to Message
-        @Suppress("UnnecessaryOptInAnnotation")
-        @OptIn(ExperimentalSerializationApi::class)
-        fun fromJson(json: String): User {
-            return Json.decodeFromString(json)
-        }
-    }
-
-    // Convert Message to JSON String
-    override fun toString(): String {
-        return "{\"id\":$id,\"name\":\"$name\"}"
-    }
-}
-
-// Basic Message Data Class
-@Serializable
-data class Message (
-    val data: String = "",
-    val author: User = User(),
-    val room: Int = 0,
-    val date: Long = 0,
-) {
-    companion object {
-        // Convert JSON String to Message
-        @Suppress("UnnecessaryOptInAnnotation")
-        @OptIn(ExperimentalSerializationApi::class)
-        fun fromJson(json: String): Message {
-            return Json.decodeFromString(json)
-        }
-    }
-
-    // Convert Message to JSON String
-    override fun toString(): String {
-        return "{\"author\":${author.toString()},\"room\":$room,\"date\":$date,\"data\":\"$data\"}"
-    }
-}
-
-// Basic Room Data Class
-data class Room (
-    val id: Int,
-    var name: String,
-    val messages: SnapshotStateList<Message> = SnapshotStateList()
-)
+import okio.IOException
 
 // Get Current UNIX Timestamp
 fun time(): Long {
@@ -148,14 +95,17 @@ fun time(): Long {
 
 // Main Activity
 class MainActivity : ComponentActivity() {
-    // Networking
-    private var socket: WebSocket? = null
     var isConnected = false
+    var me: User = User((0..8191).random(), "User")
 
-    var me: User = User((0..8191).random(),"Miglos Weeb")
-    var rooms = SnapshotStateMap<Int, Room>()
-
+    var rooms = SnapshotStateMap<String, Room>()
     private var keyboardController: SoftwareKeyboardController? = null
+
+    private var serverURL: String = "chat.toaster.hu"
+
+    // Networking
+    private val client = OkHttpClient()
+    private lateinit var socket: WebSocket
 
     // onCreate Function
     @SuppressLint("CoroutineCreationDuringComposition")
@@ -165,29 +115,18 @@ class MainActivity : ComponentActivity() {
         setContent {
 
             RoomsTheme(dynamicColor = false) {
-                Surface(Modifier.fillMaxSize(), color=MaterialTheme.colorScheme.background) {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     keyboardController = LocalSoftwareKeyboardController.current
 
-                    val connectionManager = rememberCoroutineScope()
-                    connectionManager.launch {
-                        while (true) {
-                            if (!isConnected)
-                                socket = OkHttpClient().newWebSocket(
-                                    Request.Builder().url(getString(R.string.server_url)).build(),
-                                    Listener(this@MainActivity)
-                                )
-
-                            delay(10000)
-                        }
-                    }
+                    LaunchThreads()
 
                     val drawerState = rememberDrawerState(DrawerValue.Open)
                     val scope = rememberCoroutineScope()
 
                     var selectedItem by rememberSaveable { mutableStateOf(-1) }
-                    var selectedRoom by rememberSaveable { mutableStateOf(0) }
+                    var selectedRoom by rememberSaveable { mutableStateOf("") }
 
-                    var devMode = 0
+                    var devMode = 10
 
                     // Main App Drawer
                     ModalNavigationDrawer(
@@ -198,9 +137,13 @@ class MainActivity : ComponentActivity() {
                                     OutlinedCard(
                                         Modifier
                                             .fillMaxWidth()
-                                            .padding(20.dp)) {
+                                            .padding(20.dp)
+                                    ) {
                                         // Drawer Heading
-                                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
                                             // "Rooms" Icon
                                             Icon(
                                                 painterResource(R.drawable.ic_door),
@@ -283,32 +226,48 @@ class MainActivity : ComponentActivity() {
                                     }
 
                                     // Profile
-                                    Row (
+                                    Row(
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .padding(start = 20.dp, end = 20.dp, bottom = 10.dp)
                                             .wrapContentHeight(Alignment.Bottom)
-                                            ) {
-                                        Icon(Icons.Default.AccountCircle, null, Modifier.padding(4.dp))
+                                    ) {
+                                        Icon(
+                                            Icons.Default.AccountCircle,
+                                            null,
+                                            Modifier.padding(4.dp)
+                                        )
 
                                         val openDialog = remember { mutableStateOf(false) }
                                         val newName = remember { mutableStateOf(me.name) }
                                         var isError by rememberSaveable { mutableStateOf(false) }
 
+                                        fun validate() {
+                                            isError =
+                                                newName.value.length > 16 || newName.value.isEmpty()
+                                        }
+
                                         Text(text = "Username: ")
-                                        Text (
+                                        Text(
                                             text = me.name,
                                             style = TextStyle(textDecoration = TextDecoration.Underline),
-                                            modifier = Modifier.clickable { openDialog.value = true })
+                                            modifier = Modifier.clickable {
+                                                openDialog.value = true
+                                                validate()
+                                            })
 
                                         if (openDialog.value) {
                                             AlertDialog(
-                                                onDismissRequest = { openDialog.value = false},
+                                                onDismissRequest = { openDialog.value = false },
                                                 icon = {
                                                     Row {
-                                                        Icon(Icons.Default.AccountCircle, null, Modifier.padding(end=8.dp))
+                                                        Icon(
+                                                            Icons.Default.AccountCircle,
+                                                            null,
+                                                            Modifier.padding(end = 8.dp)
+                                                        )
                                                         Text("Edit Username")
                                                     }
                                                 },
@@ -318,9 +277,9 @@ class MainActivity : ComponentActivity() {
                                                         value = newName.value,
                                                         onValueChange = {
                                                             newName.value = it
-                                                            isError = newName.value.length > 16
-                                                            },
-                                                        label = { Text(if(isError)"Username*" else "Username") },
+                                                            validate()
+                                                        },
+                                                        label = { Text(if (isError) "Username*" else "Username") },
                                                         placeholder = { Text("Miglos Weeb") },
                                                         singleLine = true,
                                                         supportingText = {
@@ -335,7 +294,7 @@ class MainActivity : ComponentActivity() {
                                                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                                         keyboardActions = KeyboardActions(
                                                             onDone = {
-                                                                isError = newName.value.length > 16
+                                                                validate()
 
                                                                 if (!isError) {
                                                                     openDialog.value = false
@@ -356,7 +315,8 @@ class MainActivity : ComponentActivity() {
                                                             openDialog.value = false
                                                             me.name = newName.value
                                                         },
-                                                        enabled = !isError) {
+                                                        enabled = !isError
+                                                    ) {
                                                         Text("Confirm")
                                                     }
                                                 },
@@ -379,7 +339,9 @@ class MainActivity : ComponentActivity() {
                             when (selectedItem) {
                                 -2 -> DevMode()
                                 -1 -> AddRoom(scope, drawerState)
-                                else -> if (selectedItem < 0) selectedItem = -1 else RoomChat(selectedRoom)
+                                else -> if (selectedItem < 0) selectedItem = -1 else RoomChat(
+                                    selectedRoom
+                                )
                             }
                         }
                     )
@@ -388,28 +350,100 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @SuppressLint("CoroutineCreationDuringComposition")
+    @Composable
+    private fun LaunchThreads() {
+        val connectionManager = rememberCoroutineScope()
+        connectionManager.launch {
+            while (true) {
+                try {
+                    if (!isConnected) {
+                        val request = Request.Builder().url("ws://$serverURL:443").build()
+                        socket = client.newWebSocket(request, Listener(this@MainActivity))
+                    }
+                } finally {
+                    Log.w("WEBSOCKET", "Failed to create WebSocket")
+                }
+
+                delay(10000)
+            }
+        }
+    }
+
+    private fun getRoomData(id: String) {
+        val request = Request.Builder()
+            .url("http://$serverURL/room/$id")
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                // Handle this
+                e.cause?.message?.let { it1 -> Log.d("get", it1) }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                // here is the response from the server
+                Log.d("get", response.message)
+            }
+        })
+    }
+
     // DevMode Screen
     @Composable
     private fun DevMode() {
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally){
-            Text(
-                text = "DevMode Screen",
-                modifier = Modifier.padding(8.dp)
-            )
+        var url by remember { mutableStateOf(serverURL) }
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "DevMode Screen",
+                    modifier = Modifier.padding(8.dp)
+                )
+
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp)
+                ) {
+                    OutlinedTextField(
+                        value = url,
+                        onValueChange = { url = it },
+                        singleLine = true,
+                        label = { Text("Server URL") },
+                        placeholder = { Text("google.com") },
+
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() })
+                    )
+
+                    IconButton(
+                        onClick = { serverURL = url }) {
+                        Icon(Icons.Default.Refresh, contentDescription = null)
+                    }
+                }
+
+                Button(
+                    content = { Text("Get Request") },
+                    onClick = { getRoomData("00000000") },
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
 
             Button(
-                content = { Text("Re-Create Activity") },
-                onClick = { super.recreate() },
-                modifier = Modifier.padding(8.dp)
+                content = { Text("Apply") },
+                onClick = {
+                    // Apply Changes
+                    super.recreate()
+                          },
+                modifier = Modifier.fillMaxSize().padding(16.dp).wrapContentWidth(Alignment.CenterHorizontally).wrapContentHeight(Alignment.Bottom)
             )
         }
-
     }
 
     // Join/Create Room
     @Composable
     private fun AddRoom(scope: CoroutineScope, drawerState: DrawerState) {
-        var roomNumber by rememberSaveable { mutableStateOf(0) }
+        var roomID by rememberSaveable { mutableStateOf("") }
         var roomName by rememberSaveable { mutableStateOf("") }
 
         Column(modifier = Modifier
@@ -417,13 +451,16 @@ class MainActivity : ComponentActivity() {
             .padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
 
             OutlinedTextField(
-                value = roomNumber.toString(),
-                onValueChange = { if(it.isNotBlank()) roomNumber = it.toInt() },
+                value = roomID,
+                onValueChange = { roomID = it },
                 label = { Text("Room ID") },
-                placeholder = { Text("1234") },
+                placeholder = { Text("abc123") },
                 singleLine = true,
 
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.NumberPassword,
+                    imeAction = ImeAction.Done
+                ),
                 keyboardActions = KeyboardActions(
                     onDone = {
                     }
@@ -438,12 +475,13 @@ class MainActivity : ComponentActivity() {
             OutlinedTextField(
                 value = roomName,
                 onValueChange = { roomName = it },
-                label = { Text("Room Display Name") },
-                placeholder = { Text("City Center") },
+                label = { Text("Room Name") },
+                placeholder = { Text("AwesomeRooms") },
 
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(
                     onDone = {
+                        // TODO
                     }
                 ),
 
@@ -454,16 +492,16 @@ class MainActivity : ComponentActivity() {
                     .padding(top = 16.dp)
             )
 
-            Button (
+            Button(
                 content = { Text("Add Room") },
                 onClick = {
-                    rooms[roomNumber] = Room(roomNumber, roomName)
+                    rooms[roomID] = Room(roomID, roomName)
 
                     scope.launch { drawerState.open() }
                     keyboardController?.hide()
                     //selectedItem = rooms.size-1
                 },
-                enabled = !rooms.containsKey(roomNumber),
+                enabled = !rooms.containsKey(roomID),
 
                 modifier = Modifier
                     .fillMaxSize()
@@ -475,7 +513,7 @@ class MainActivity : ComponentActivity() {
 
     // Room Chat
     @Composable
-    private fun RoomChat(currentRoom: Int) {
+    private fun RoomChat(currentRoom: String) {
         var text by rememberSaveable { mutableStateOf("") }
         val lazyListState = rememberLazyListState()
 
@@ -485,7 +523,7 @@ class MainActivity : ComponentActivity() {
 //            PopupMessage(stringResource(R.string.connecting))
 
             // Chat Box
-            LazyColumn (state=lazyListState) {
+            LazyColumn(state = lazyListState) {
                 rooms[currentRoom]?.let {
                     items(it.messages) { message ->
                         Row(

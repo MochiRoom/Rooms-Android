@@ -3,5 +3,4 @@
     <string name="connecting">Connecting...</string>
     <string name="chat_placeholder">holder place</string>
     <string name="gcp_id">a\n</string>
-    <string name="server_url">ws://chat.toaster.hu:443</string>
 </resources>
