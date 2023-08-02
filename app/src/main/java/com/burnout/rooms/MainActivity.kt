@@ -5,12 +5,13 @@
 package com.burnout.rooms
 
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,7 +35,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DrawerState
@@ -68,11 +71,9 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.text.isDigitsOnly
@@ -82,12 +83,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.Call
 import okhttp3.Callback
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
 import okio.IOException
+
 
 // Get Current UNIX Timestamp
 fun time(): Long {
@@ -96,26 +95,23 @@ fun time(): Long {
 
 // Main Activity
 class MainActivity : ComponentActivity() {
+  // TODO make me & rooms rememberSaveable
   var me: User = User((0..8191).random(), "User")
   var rooms = SnapshotStateMap<String, Room>()
 
   // Keyboard Controller
   private var keyboardController: SoftwareKeyboardController? = null
 
-  // Networking
-  private var serverURL: String = "chat.toaster.hu"
-  private var wsPort: Int = 443
-
-  private val client = OkHttpClient()
-  var socket: WebSocket? = null
+  private val server: RoomsAPI = RoomsAPI()
 
   // onCreate Function
   @SuppressLint("CoroutineCreationDuringComposition")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
-    setContent {
+    server.connect()
 
+    setContent {
       RoomsTheme(dynamicColor = false) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
           keyboardController = LocalSoftwareKeyboardController.current
@@ -148,20 +144,11 @@ class MainActivity : ComponentActivity() {
                       Icon(
                         painterResource(R.drawable.ic_door),
                         null,
-                        Modifier
-                          .padding(10.dp)
-                          .size(32.dp)
-                          .combinedClickable(
-                            onClick = {},
-                            onLongClick = { selectedItem = -2 },
-                          ),
+                        Modifier.padding(10.dp).size(32.dp)
                       )
 
                       // "Rooms" Heading
-                      Text(
-                        stringResource(R.string.app_name),
-                        fontSize = 24.sp
-                      )
+                      Text(stringResource(R.string.app_name), fontSize = 24.sp)
 
                       // Join/Create Room Button
                       IconButton(
@@ -222,22 +209,17 @@ class MainActivity : ComponentActivity() {
                     }
                   }
 
-                  // Profile
+                  // Utility
                   Row(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                       .fillMaxSize()
-                      .padding(start = 20.dp, end = 20.dp, bottom = 10.dp)
+                      .padding(start = 20.dp, end = 20.dp)
                       .wrapContentHeight(Alignment.Bottom)
                   ) {
-                    Icon(
-                      Icons.Default.AccountCircle,
-                      null,
-                      Modifier.padding(4.dp)
-                    )
-
-                    val openDialog = remember { mutableStateOf(false) }
+                    // Account
+                    val accountDialog = remember { mutableStateOf(false) }
                     val newName = remember { mutableStateOf(me.name) }
                     var isError by rememberSaveable { mutableStateOf(false) }
 
@@ -246,18 +228,18 @@ class MainActivity : ComponentActivity() {
                         newName.value.length > 16 || newName.value.isEmpty()
                     }
 
-                    Text(text = "Username: ")
-                    Text(
-                      text = me.name,
-                      style = TextStyle(textDecoration = TextDecoration.Underline),
-                      modifier = Modifier.clickable {
-                        openDialog.value = true
-                        validate()
-                      })
+                    IconButton(
+                      content = { Icon(Icons.Default.AccountCircle, null) },
+                      onClick = {
+                        accountDialog.value = true
+                          validate()
+                        },
+                      modifier = Modifier.padding(4.dp),
+                    )
 
-                    if (openDialog.value) {
+                    if (accountDialog.value) {
                       AlertDialog(
-                        onDismissRequest = { openDialog.value = false },
+                        onDismissRequest = { accountDialog.value = false },
                         icon = {
                           Row {
                             Icon(
@@ -277,7 +259,7 @@ class MainActivity : ComponentActivity() {
                               validate()
                             },
                             label = { Text(if (isError) "Username*" else "Username") },
-                            placeholder = { Text("Miglos Weeb") },
+                            placeholder = { Text("Joe Smith") },
                             singleLine = true,
                             supportingText = {
                               Text(
@@ -294,7 +276,7 @@ class MainActivity : ComponentActivity() {
                                 validate()
 
                                 if (!isError) {
-                                  openDialog.value = false
+                                  accountDialog.value = false
                                   me.name = newName.value
                                 }
                               }
@@ -309,25 +291,79 @@ class MainActivity : ComponentActivity() {
                         confirmButton = {
                           TextButton(
                             onClick = {
-                              openDialog.value = false
+                              accountDialog.value = false
                               me.name = newName.value
                             },
                             enabled = !isError
                           ) {
-                            Text("Confirm")
+                            Text("Apply")
                           }
                         },
                         dismissButton = {
                           TextButton(
                             onClick = {
-                              openDialog.value = false
+                              accountDialog.value = false
                               newName.value = me.name
                             }) {
-                            Text("Dismiss")
+                            Text("Cancel")
                           }
                         }
                       )
                     }
+
+                    // Settings
+                    val settingsDialog = remember { mutableStateOf(false) }
+
+                    IconButton(
+                      content = { Icon(Icons.Default.Settings, null) },
+                      onClick = {
+                        settingsDialog.value = true
+                      },
+                      modifier = Modifier.padding(4.dp)
+                    )
+
+                    if (settingsDialog.value) {
+                      AlertDialog(
+                        onDismissRequest = { settingsDialog.value = false },
+                        icon = {
+                          Row {
+                            Icon(Icons.Default.Settings, null, Modifier.padding(end = 8.dp))
+                            Text("Settings")
+                          }
+                        },
+                        title = null,
+                        text = {
+                          Text("No Settings Available YET")
+                        },
+                        confirmButton = {
+                          TextButton(
+                            content = { Text("Confirm") },
+                            onClick = { settingsDialog.value = false },
+                            enabled = !isError
+                          )
+                        },
+                        dismissButton = {
+                          TextButton(
+                            content = { Text("Dismiss") },
+                            onClick = { settingsDialog.value = false }
+                          )
+                        }
+                      )
+                    }
+
+                    // Open In Browser
+                    IconButton(
+                      content = { Icon(painterResource(R.drawable.ic_open_in_browser), null) },
+                      onClick = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://chat.toaster.hu"))) },
+                      modifier = Modifier.padding(4.dp)
+                    )
+
+                    // DevMode
+                    IconButton(
+                      content = { Icon(Icons.Default.Build, null, Modifier.padding(4.dp)) },
+                      onClick = { selectedItem = -2 },
+//                      modifier = Modifier.padding(4.dp)
+                    )
                   }
                 }
               }
@@ -345,6 +381,12 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  override fun onDestroy() {
+    super.onDestroy()
+
+    server.disconnect()
+  }
+
   @SuppressLint("CoroutineCreationDuringComposition")
   @Composable
   private fun LaunchThreads() {
@@ -352,12 +394,9 @@ class MainActivity : ComponentActivity() {
     connectionManager.launch {
       while (true) {
         try {
-          if (socket == null) {
-            val request = Request.Builder().url("ws://$serverURL:443").build()
-            socket = client.newWebSocket(request, Listener(this@MainActivity))
-          }
+          if (!server.connection?.isConnected!!) server.connect()
         } finally {
-          Log.w("WEBSOCKET", "Failed to create WebSocket")
+          Log.w("WEBSOCKET", "Failed to connect to server")
         }
 
         delay(10000)
@@ -365,95 +404,77 @@ class MainActivity : ComponentActivity() {
     }
   }
 
-  private fun getRoomData(id: String) {
-    val request = Request.Builder()
-      .url("http://$serverURL/room/$id")
-      .build()
-
-    client.newCall(request).enqueue(object : Callback {
-      override fun onFailure(call: Call, e: IOException) {
-        // Handle this
-        e.cause?.message?.let { it1 -> Log.d("get", it1) }
-      }
-
-      override fun onResponse(call: Call, response: Response) {
-        // here is the response from the server
-        Log.d("get", response.message)
-      }
-    })
-  }
-
   // DevMode Screen
   @Composable
   private fun DevMode() {
-    var url by remember { mutableStateOf(serverURL) }
-    var port by remember { mutableStateOf(wsPort) }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-      Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-          text = "DevMode Screen",
-          modifier = Modifier.padding(8.dp)
-        )
-
-        // Change Main Server URL
-        OutlinedTextField(
-          value = url,
-          onValueChange = { url = it },
-          singleLine = true,
-          label = { Text("Server URL") },
-          placeholder = { Text("google.com") },
-
-          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-          keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() })
-        )
-
-        // Edit WebSocket Port
-        Row(horizontalArrangement = Arrangement.Center) {
-          OutlinedTextField(
-            value = port.toString(),
-            onValueChange = {
-              if (it.length <= 5 && it.isDigitsOnly()) port = it.toInt()
-            },
-            singleLine = true,
-            label = { Text("WS Port") },
-            placeholder = { Text("443") },
-
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() })
-          )
-        }
-
-        // Create GET Request
-//              Button(
-//                content = { Text("Get Request") },
-//                onClick = { getRoomData("00000000") },
-//                modifier = Modifier.padding(16.dp)
-//              )
+//    var url by remember { mutableStateOf(serverURL) }
+//    var port by remember { mutableStateOf(wsPort) }
+//
+//    Box(modifier = Modifier.fillMaxSize()) {
+//      Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+//        Text(
+//          text = "DevMode Screen",
+//          modifier = Modifier.padding(8.dp)
+//        )
+//
+//        // Change Main Server URL
+//        OutlinedTextField(
+//          value = url,
+//          onValueChange = { url = it },
+//          singleLine = true,
+//          label = { Text("Server URL") },
+//          placeholder = { Text("google.com") },
+//
+//          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+//          keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() })
+//        )
+//
+//        // Edit WebSocket Port
+//        Row(horizontalArrangement = Arrangement.Center) {
+//          OutlinedTextField(
+//            value = port.toString(),
+//            onValueChange = {
+//              if (it.length <= 5 && it.isDigitsOnly()) port = it.toInt()
+//            },
+//            singleLine = true,
+//            label = { Text("WS Port") },
+//            placeholder = { Text("443") },
+//
+//            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+//            keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() })
+//          )
+//        }
+//
+//        // Create GET Request
+////              Button(
+////                content = { Text("Get Request") },
+////                onClick = { getRoomData("00000000") },
+////                modifier = Modifier.padding(16.dp)
+////              )
+////            }
+//
+//        // Apply Changes
+//        Button(
+//          content = { Text("Apply Changes") },
+//          onClick = {
+//            // Apply Changes
+//            if (serverURL != url || wsPort != port) {
+//              serverURL = url
+//              wsPort = port
+//
+//              socket?.close(69, null)
 //            }
-
-        // Apply Changes
-        Button(
-          content = { Text("Apply Changes") },
-          onClick = {
-            // Apply Changes
-            if (serverURL != url || wsPort != port) {
-              serverURL = url
-              wsPort = port
-
-              socket?.close(69, null)
-            }
-
-            //super.recreate()
-          },
-          modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .wrapContentWidth(Alignment.CenterHorizontally)
-            .wrapContentHeight(Alignment.Bottom)
-        )
-      }
-    }
+//
+//            //super.recreate()
+//          },
+//          modifier = Modifier
+//            .fillMaxSize()
+//            .padding(16.dp)
+//            .wrapContentWidth(Alignment.CenterHorizontally)
+//            .wrapContentHeight(Alignment.Bottom)
+//        )
+//      }
+//    }
   }
 
     // Join/Create Room
@@ -589,12 +610,12 @@ class MainActivity : ComponentActivity() {
           if (text.isBlank())
               return;
 
-          socket?.let { sock ->
-            // Is Room Available ?
-            rooms[currentRoom]?.let { it2 -> sock.send(Message(text, me, it2.id, time()).toString()) }
-            text = ""
-            keyboardController?.hide()
-          }
+//          socket?.let { sock ->
+//            // Is Room Available ?
+//            rooms[currentRoom]?.let { it2 -> sock.send(Message(text, me, it2.id, time()).toString()) }
+//            text = ""
+//            keyboardController?.hide()
+//          }
         }
 
         // Text Input
@@ -613,7 +634,7 @@ class MainActivity : ComponentActivity() {
             IconButton(
               content = { Icon(Icons.Default.Send, null) },
               onClick = { send() },
-              enabled = socket != null
+              enabled = false // socket != null
             )
           },
 
@@ -628,30 +649,7 @@ class MainActivity : ComponentActivity() {
     }
   }
 
-  class Listener(mainIn: MainActivity) : WebSocketListener() {
-    private val main = mainIn
 
-    override fun onOpen(webSocket: WebSocket, response: Response) {
-      Log.d("WEBSOCKET", "Connection opened")
-    }
-
-    override fun onMessage(webSocket: WebSocket, text: String) {
-      Log.d("WEBSOCKET", "Received Message: $text")
-      val msg = Message.fromJson(text)
-
-      main.rooms[msg.room]?.let { it1 -> it1.messages += msg }
-    }
-
-    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-      Log.d("WEBSOCKET", "Connection closed")
-      main.socket = null
-    }
-
-    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-      Log.w("WEBSOCKET", "Connection failure: ${t.message}")
-      main.socket = null
-    }
-  }
 
 //@Preview(showBackground = true)
 //@Composable
