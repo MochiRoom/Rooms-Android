@@ -1,5 +1,5 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3Api::class,
-    ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class
+    ExperimentalComposeUiApi::class
 )
 
 package com.burnout.rooms
@@ -11,8 +11,6 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,16 +74,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.text.isDigitsOnly
 import com.burnout.rooms.ui.theme.RoomsTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.Request
-import okhttp3.Response
-import okio.IOException
 
 
 // Get Current UNIX Timestamp
@@ -95,8 +87,8 @@ fun time(): Long {
 
 // Main Activity
 class MainActivity : ComponentActivity() {
-  // TODO make me & rooms rememberSaveable
-  var me: User = User((0..8191).random(), "User")
+  // TODO make me & rooms rememberSavable
+  private var me: User = User((0..8191).random(), "User")
   var rooms = SnapshotStateMap<String, Room>()
 
   // Keyboard Controller
@@ -144,7 +136,9 @@ class MainActivity : ComponentActivity() {
                       Icon(
                         painterResource(R.drawable.ic_door),
                         null,
-                        Modifier.padding(10.dp).size(32.dp)
+                        Modifier
+                          .padding(10.dp)
+                          .size(32.dp)
                       )
 
                       // "Rooms" Heading
@@ -394,7 +388,7 @@ class MainActivity : ComponentActivity() {
     connectionManager.launch {
       while (true) {
         try {
-          if (!server.connection?.isConnected!!) server.connect()
+          if (!server.connection.isConnected) server.connect()
         } finally {
           Log.w("WEBSOCKET", "Failed to connect to server")
         }
@@ -493,7 +487,7 @@ class MainActivity : ComponentActivity() {
           value = roomID,
           onValueChange = { roomID = it },
           label = { Text("Room ID") },
-          placeholder = { Text("abcd1234") },
+          placeholder = { Text("my-awesome-room") },
           singleLine = true,
 
           keyboardOptions = KeyboardOptions(
@@ -515,7 +509,7 @@ class MainActivity : ComponentActivity() {
           value = roomName,
           onValueChange = { roomName = it },
           label = { Text("Room Name") },
-          placeholder = { Text("ExampleName123") },
+          placeholder = { Text("My Awesome Room") },
 
           keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
           keyboardActions = KeyboardActions(
@@ -608,7 +602,7 @@ class MainActivity : ComponentActivity() {
         // Send Message
         fun send() {
           if (text.isBlank())
-              return;
+              return
 
 //          socket?.let { sock ->
 //            // Is Room Available ?

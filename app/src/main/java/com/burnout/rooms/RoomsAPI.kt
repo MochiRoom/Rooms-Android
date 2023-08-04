@@ -1,6 +1,5 @@
 package com.burnout.rooms
 
-import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -8,57 +7,58 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 
 data class ConnectionData(
-  var serverURL: String,
-  var websocketPort: Int,
+  var serverURL: String = "", var websocketPort: Int = 0,
 
-  var isConnected: Boolean = false,
+  var isConnected: Boolean = false
 )
 
 class RoomsAPI {
-  var connection: ConnectionData? = null
+  var connection: ConnectionData = ConnectionData()
 
   // Networking
   private val client = OkHttpClient()
-  private var socket: WebSocket? = null
+  private lateinit var socket: WebSocket
 
   // Connect to Server
   fun connect(serverURL: String = "chat.toaster.hu", websocketPort: Int = 443) {
     connection = ConnectionData(serverURL, websocketPort)
 
-    val request = Request.Builder().url("ws://$serverURL:${connection?.websocketPort}").build()
-    socket = client.newWebSocket(request, Listener(this@RoomsAPI))
+    try {
+      val request = Request.Builder().url("ws://$serverURL:${connection.websocketPort}").build()
+      socket = client.newWebSocket(request, Listener(this@RoomsAPI))
+    } finally {
+      println("RoomsAPI: Connection Failed")
+    }
   }
 
   // Disconnect from the Server
   fun disconnect() {
-    connection = null
+    connection.isConnected = false
   }
 
   private class Listener(api: RoomsAPI) : WebSocketListener() {
     private val server = api
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
-      Log.d("WEBSOCKET", "Connection opened")
-      server.connection?.isConnected = true
+//      println("RoomsAPI: Connection opened")
+      server.connection.isConnected = true
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
-      Log.d("WEBSOCKET", "Received Message: $text")
-      val msg = Message.fromJson(text)
+//      println("RoomsAPI: Received Message: $text")
+//      val msg = Message.fromJson(text)
 
-      //server.rooms[msg.room]?.let { it1 -> it1.messages += msg }
+//      server.rooms[msg.room]?.let { it1 -> it1.messages += msg }
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-      Log.d("WEBSOCKET", "Connection closed")
-      server.socket = null
-      server.connection?.isConnected = false
+//      println("RoomsAPI: Connection Closed")
+      server.connection.isConnected = false
     }
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-      Log.w("WEBSOCKET", "Connection failure: ${t.message}")
-      server.socket = null
-      server.connection?.isConnected = false
+//      println("RoomsAPI: Failed to connect")
+      server.connection.isConnected = false
     }
   }
 }
