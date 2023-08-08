@@ -1,0 +1,5 @@
+<resources>
+    <integer name="limit_username">16</integer>
+    <integer name="limit_userid">16</integer>
+    <integer name="limit_password">16</integer>
+</resources>

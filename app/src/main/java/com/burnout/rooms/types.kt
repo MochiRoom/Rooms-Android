@@ -6,11 +6,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
-
 @Serializable
 data class User(
-  val id: Int = 0,
+  var id: String = "",
   var name: String = "",
+  var password: String = ""
 ) {
   companion object {
     // Convert JSON String to Message

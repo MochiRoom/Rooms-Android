@@ -27,7 +27,7 @@ class RoomsAPI {
       val request = Request.Builder().url("ws://$serverURL:${connection.websocketPort}").build()
       socket = client.newWebSocket(request, Listener(this@RoomsAPI))
     } finally {
-      println("RoomsAPI: Connection Failed")
+      throw Exception("Connection Failed")
     }
   }
 
@@ -52,12 +52,10 @@ class RoomsAPI {
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-//      println("RoomsAPI: Connection Closed")
       server.connection.isConnected = false
     }
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-//      println("RoomsAPI: Failed to connect")
       server.connection.isConnected = false
     }
   }

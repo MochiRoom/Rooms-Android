@@ -1,5 +1,5 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3Api::class,
-    ExperimentalComposeUiApi::class
+    ExperimentalComposeUiApi::class, ExperimentalMaterial3Api::class
 )
 
 package com.burnout.rooms
@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,8 +66,10 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
+import androidx.compose.ui.res.integerResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -79,7 +82,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-
 // Get Current UNIX Timestamp
 fun time(): Long {
     return System.currentTimeMillis() / 1000
@@ -88,7 +90,7 @@ fun time(): Long {
 // Main Activity
 class MainActivity : ComponentActivity() {
   // TODO make me & rooms rememberSavable
-  private var me: User = User((0..8191).random(), "User")
+  private var me: User = User("(0..8191).random()", "User") // TODO save username & id
   var rooms = SnapshotStateMap<String, Room>()
 
   // Keyboard Controller
@@ -101,8 +103,6 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
-    server.connect()
-
     setContent {
       RoomsTheme(dynamicColor = false) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -113,7 +113,7 @@ class MainActivity : ComponentActivity() {
           val drawerState = rememberDrawerState(DrawerValue.Open)
           val scope = rememberCoroutineScope()
 
-          var selectedItem by rememberSaveable { mutableStateOf(-1) }
+          var selectedItem by rememberSaveable { mutableStateOf(0) }
           var selectedRoom by rememberSaveable { mutableStateOf("") }
 
           // Main App Drawer
@@ -148,7 +148,7 @@ class MainActivity : ComponentActivity() {
                       IconButton(
                         content = { Icon(Icons.Default.AddCircle, null) },
                         onClick = {
-                          selectedItem = -1
+                          selectedItem = 0
                           scope.launch { drawerState.close() }
                           keyboardController?.hide()
                         },
@@ -180,12 +180,7 @@ class MainActivity : ComponentActivity() {
                           selectedRoom = roomID
 
                         NavigationDrawerItem(
-                          icon = {
-                            Icon(
-                              painterResource(R.drawable.ic_chats),
-                              contentDescription = null
-                            )
-                          },
+                          icon = { Icon(painterResource(R.drawable.ic_chats), null) },
                           label = { Text(room.name) },
                           selected = id == selectedItem,
                           onClick = {
@@ -203,7 +198,7 @@ class MainActivity : ComponentActivity() {
                     }
                   }
 
-                  // Utility
+                  // Utility Bar (Bottom)
                   Row(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
@@ -212,162 +207,16 @@ class MainActivity : ComponentActivity() {
                       .padding(start = 20.dp, end = 20.dp)
                       .wrapContentHeight(Alignment.Bottom)
                   ) {
-                    // Account
-                    val accountDialog = remember { mutableStateOf(false) }
-                    val newName = remember { mutableStateOf(me.name) }
-                    var isError by rememberSaveable { mutableStateOf(false) }
-
-                    fun validate() {
-                      isError =
-                        newName.value.length > 16 || newName.value.isEmpty()
-                    }
-
-                    IconButton(
-                      content = { Icon(Icons.Default.AccountCircle, null) },
-                      onClick = {
-                        accountDialog.value = true
-                          validate()
-                        },
-                      modifier = Modifier.padding(4.dp),
-                    )
-
-                    if (accountDialog.value) {
-                      AlertDialog(
-                        onDismissRequest = { accountDialog.value = false },
-                        icon = {
-                          Row {
-                            Icon(
-                              Icons.Default.AccountCircle,
-                              null,
-                              Modifier.padding(end = 8.dp)
-                            )
-                            Text("Edit Username")
-                          }
-                        },
-                        title = null,
-                        text = {
-                          OutlinedTextField(
-                            value = newName.value,
-                            onValueChange = {
-                              newName.value = it
-                              validate()
-                            },
-                            label = { Text(if (isError) "Username*" else "Username") },
-                            placeholder = { Text("Joe Smith") },
-                            singleLine = true,
-                            supportingText = {
-                              Text(
-                                text = "Limit: ${newName.value.length}/16",
-                                textAlign = TextAlign.End,
-                                modifier = Modifier.fillMaxWidth()
-                              )
-                            },
-                            isError = isError,
-
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(
-                              onDone = {
-                                validate()
-
-                                if (!isError) {
-                                  accountDialog.value = false
-                                  me.name = newName.value
-                                }
-                              }
-                            ),
-
-                            modifier = Modifier
-                              .wrapContentWidth(Alignment.CenterHorizontally)
-                              .wrapContentHeight(Alignment.Top)
-                              .padding(top = 16.dp)
-                          )
-                        },
-                        confirmButton = {
-                          TextButton(
-                            onClick = {
-                              accountDialog.value = false
-                              me.name = newName.value
-                            },
-                            enabled = !isError
-                          ) {
-                            Text("Apply")
-                          }
-                        },
-                        dismissButton = {
-                          TextButton(
-                            onClick = {
-                              accountDialog.value = false
-                              newName.value = me.name
-                            }) {
-                            Text("Cancel")
-                          }
-                        }
-                      )
-                    }
-
-                    // Settings
-                    val settingsDialog = remember { mutableStateOf(false) }
-
-                    IconButton(
-                      content = { Icon(Icons.Default.Settings, null) },
-                      onClick = {
-                        settingsDialog.value = true
-                      },
-                      modifier = Modifier.padding(4.dp)
-                    )
-
-                    if (settingsDialog.value) {
-                      AlertDialog(
-                        onDismissRequest = { settingsDialog.value = false },
-                        icon = {
-                          Row {
-                            Icon(Icons.Default.Settings, null, Modifier.padding(end = 8.dp))
-                            Text("Settings")
-                          }
-                        },
-                        title = null,
-                        text = {
-                          Text("No Settings Available YET")
-                        },
-                        confirmButton = {
-                          TextButton(
-                            content = { Text("Confirm") },
-                            onClick = { settingsDialog.value = false },
-                            enabled = !isError
-                          )
-                        },
-                        dismissButton = {
-                          TextButton(
-                            content = { Text("Dismiss") },
-                            onClick = { settingsDialog.value = false }
-                          )
-                        }
-                      )
-                    }
-
-                    // Open In Browser
-                    IconButton(
-                      content = { Icon(painterResource(R.drawable.ic_open_in_browser), null) },
-                      onClick = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://chat.toaster.hu"))) },
-                      modifier = Modifier.padding(4.dp)
-                    )
-
-                    // DevMode
-                    IconButton(
-                      content = { Icon(Icons.Default.Build, null, Modifier.padding(4.dp)) },
-                      onClick = { selectedItem = -2 },
-//                      modifier = Modifier.padding(4.dp)
-                    )
+                    UtilityBar()
                   }
                 }
               }
             },
             content = {
-              when (selectedItem) {
-                -2 -> DevMode()
-                -1 -> AddRoom(scope, drawerState)
-                else -> if (selectedItem < 0) selectedItem = -1 else RoomView(selectedRoom)
-              }
+              if (selectedItem == 0)
+                AddRoom(scope, drawerState)
+              else
+               RoomView(selectedRoom)
             }
           )
         }
@@ -389,13 +238,261 @@ class MainActivity : ComponentActivity() {
       while (true) {
         try {
           if (!server.connection.isConnected) server.connect()
-        } finally {
-          Log.w("WEBSOCKET", "Failed to connect to server")
+        } catch (exception: Exception) {
+          exception.message?.let { Log.w("RoomsAPI", it) }
         }
 
         delay(10000)
       }
     }
+  }
+
+  @Composable
+  private fun UtilityBar() {
+    var openedDialog by rememberSaveable { mutableStateOf(0) }
+
+    // Account Button
+    IconButton(
+      content = { Icon(Icons.Default.AccountCircle, null) },
+      onClick = { openedDialog = 1 },
+      modifier = Modifier.padding(4.dp),
+    )
+
+    // Settings Button
+    IconButton(
+      content = { Icon(Icons.Default.Settings, null) },
+      onClick = { openedDialog = 2 },
+      modifier = Modifier.padding(4.dp)
+    )
+
+    // Open Homepage Button
+    IconButton(
+      content = { Icon(painterResource(R.drawable.ic_open_in_browser), null) },
+      onClick = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://chat.toaster.hu"))) }, // TODO string resource
+      modifier = Modifier.padding(4.dp)
+    )
+
+    // DevMode Button
+    IconButton(
+      content = { Icon(Icons.Default.Build, null, Modifier.padding(4.dp)) },
+      onClick = { openedDialog = 3 },
+      modifier = Modifier.padding(4.dp)
+    )
+
+    when (openedDialog) {
+      // Nothing
+      0 -> { }
+
+      // Account Dialog
+      1 -> {
+        var newName by rememberSaveable { mutableStateOf(me.name) }
+        var newUserID by rememberSaveable { mutableStateOf(me.id) }
+        var newPassword by rememberSaveable { mutableStateOf(me.password) }
+
+        var isInvalidDisplayName by rememberSaveable { mutableStateOf(false) }
+        var isInvalidUserID by rememberSaveable { mutableStateOf(false) }
+        var isInvalidPassword by rememberSaveable { mutableStateOf(false) }
+
+        fun validate(name: String, maxLength: Int = 16): Boolean {
+          return name.length > maxLength || name.isEmpty()
+        }
+
+        CustomDialog(
+          icon = Icons.Default.AccountCircle,
+          heading = "My Account",
+          onDismiss = {
+            openedDialog = 0
+            newName = me.name
+          },
+          onConfirm = {
+            openedDialog = 0
+            me.name = newName
+            me.id = newUserID
+            me.password = newPassword
+          },
+          enableConfirm = !isInvalidDisplayName && !isInvalidUserID && !isInvalidPassword
+        ) {
+          Column {
+            // Set Display Name
+            OutlinedTextField(
+              value = newName,
+              onValueChange = {
+                newName = it
+                isInvalidDisplayName = validate(newName)
+              },
+              label = { Text(if (isInvalidDisplayName) "Display Name *" else "Display Name") },  // TODO string resource
+              placeholder = { Text(stringResource(R.string.placeholder_username)) },
+              singleLine = true,
+              supportingText = {
+                Text(
+                  text = "Limit: ${newName.length}/16",  // TODO string resource
+                  textAlign = TextAlign.End,
+                  modifier = Modifier.fillMaxWidth()
+                )
+              },
+              isError = isInvalidDisplayName,
+
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+              keyboardActions = KeyboardActions(
+                onDone = {
+                  isInvalidDisplayName = validate(newName)
+
+                  if (!isInvalidDisplayName) {
+                    // TODO go to next text-field
+                  }
+                }
+              ),
+
+              modifier = Modifier
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .wrapContentHeight(Alignment.Top)
+                .padding(top = 16.dp)
+            )
+
+            // Set User ID
+            OutlinedTextField(
+              value = newUserID,
+              onValueChange = {
+                newUserID = it
+                isInvalidUserID = validate(newUserID)
+              },
+              label = { Text(if (isInvalidUserID) "User ID *" else "User ID") },  // TODO string resource
+              placeholder = { Text(stringResource(R.string.placeholder_userid)) },
+              singleLine = true,
+              supportingText = {
+                Text(
+                  text = "Limit: ${newUserID.length}/16",  // TODO string resource
+                  textAlign = TextAlign.End,
+                  modifier = Modifier.fillMaxWidth()
+                )
+              },
+              isError = isInvalidUserID,
+
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+              keyboardActions = KeyboardActions(
+                onDone = {
+                  isInvalidUserID = validate(newUserID)
+
+                  if (!isInvalidUserID) {
+                    // TODO go to next text-field
+                  }
+                }
+              ),
+
+              modifier = Modifier
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .wrapContentHeight(Alignment.Top)
+                .padding(top = 16.dp)
+            )
+
+            // Set Password
+            OutlinedTextField(
+              value = newPassword,
+              onValueChange = {
+                newPassword = it
+                isInvalidPassword = validate(newPassword)
+              },
+              label = { Text(if (isInvalidPassword) "Password *" else "Password") },  // TODO string resource
+              placeholder = { Text(stringResource(R.string.placeholder_password)) },
+              singleLine = true,
+              supportingText = {
+                Text(
+                  text = "Limit: ${newPassword.length}/16",  // TODO string resource
+                  textAlign = TextAlign.End,
+                  modifier = Modifier.fillMaxWidth()
+                )
+              },
+              isError = isInvalidPassword,
+
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+              keyboardActions = KeyboardActions(
+                onDone = {
+                  isInvalidPassword = validate(newPassword)
+
+                  if (!isInvalidPassword) {
+                    // TODO go to next text-field
+                  }
+                }
+              ),
+
+              modifier = Modifier
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .wrapContentHeight(Alignment.Top)
+                .padding(top = 16.dp)
+            )
+          }
+        }
+      }
+
+      // Settings Dialog
+      2 -> {
+        CustomDialog(
+          icon = Icons.Default.Settings,
+          heading = "Settings",
+          onDismiss = { openedDialog = 0 },
+          onConfirm = { openedDialog = 0 }
+        ) {
+          CircularProgressIndicator()
+        }
+      }
+
+      // DevMode Dialog
+      3 -> {
+        CustomDialog(
+          icon = Icons.Default.Build,
+          heading = "DevMode",
+          onDismiss = { openedDialog = 0 },
+          onConfirm = { openedDialog = 0 }
+        ) {
+          CircularProgressIndicator()
+        }
+      }
+
+      else -> { openedDialog = 0 }
+    }
+  }
+
+  @Composable
+  private fun CustomDialog(
+    icon: ImageVector,
+    heading: String,
+
+    dismissText: String = "Dismiss",
+    confirmText: String = "Confirm",
+
+    enableDismiss: Boolean = true,
+    enableConfirm: Boolean = true,
+
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+
+    content: @Composable (() -> Unit)
+  ) {
+        AlertDialog(
+        icon = {
+          Row {
+            Icon(icon, null, Modifier.padding(end = 8.dp))
+            Text(heading)
+          }
+        },
+        text = content,
+
+        confirmButton = {
+          TextButton(
+            content = { Text(confirmText) },
+            onClick = onConfirm,
+            enabled = enableConfirm
+          )
+        },
+        onDismissRequest = onDismiss,
+        dismissButton = {
+          TextButton(
+            content = { Text(dismissText) },
+            onClick = onDismiss,
+            enabled = enableDismiss
+          )
+        }
+      )
   }
 
   // DevMode Screen
@@ -486,8 +583,8 @@ class MainActivity : ComponentActivity() {
         OutlinedTextField(
           value = roomID,
           onValueChange = { roomID = it },
-          label = { Text("Room ID") },
-          placeholder = { Text("my-awesome-room") },
+          label = { Text("Room ID") },  // TODO string resource
+          placeholder = { Text("my-awesome-room") },  // TODO string resource
           singleLine = true,
 
           keyboardOptions = KeyboardOptions(
@@ -508,8 +605,8 @@ class MainActivity : ComponentActivity() {
         OutlinedTextField(
           value = roomName,
           onValueChange = { roomName = it },
-          label = { Text("Room Name") },
-          placeholder = { Text("My Awesome Room") },
+          label = { Text("Room Name") }, // TODO string resource
+          placeholder = { Text("My Awesome Room") },  // TODO string resource
 
           keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
           keyboardActions = KeyboardActions(
@@ -526,7 +623,7 @@ class MainActivity : ComponentActivity() {
         )
 
         Button(
-          content = { Text("Add Room") },
+          content = { Text("Add Room") },  // TODO string resource
           onClick = {
             rooms[roomID] = Room(roomID, roomName)
 
@@ -594,7 +691,7 @@ class MainActivity : ComponentActivity() {
             }
           }
 
-          item(key = "Spacer") {
+          item(key = "Spacer") {  // TODO string resource
             Spacer(Modifier.height(64.dp))
           }
         }
@@ -616,7 +713,7 @@ class MainActivity : ComponentActivity() {
         TextField(
           value = text,
           onValueChange = { text = it },
-          label = { Text("Send Message") },
+          label = { Text("Send Message") },  // TODO string resource
           placeholder = { Text(stringResource(R.string.chat_placeholder)) },
 
           keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),

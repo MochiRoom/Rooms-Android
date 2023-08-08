@@ -1,6 +1,9 @@
 <resources>
-    <string name="app_name">Rooms</string>
-    <string name="connecting">Connecting...</string>
+    <string name="app_name" translatable="false">Rooms</string>
+    <string name="connecting">Connecting…</string>
     <string name="chat_placeholder">holder place</string>
-    <string name="gcp_id">a\n</string>
+
+    <string name="placeholder_username">Your Name</string>
+    <string name="placeholder_userid">notanime</string>
+    <string name="placeholder_password">asdf1234</string>
 </resources>
