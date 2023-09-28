@@ -289,13 +289,9 @@ class MainActivity : ComponentActivity() {
         var newUserID by rememberSaveable { mutableStateOf(me.id) }
         var newPassword by rememberSaveable { mutableStateOf(me.password) }
 
-        var isInvalidDisplayName by rememberSaveable { mutableStateOf(false) }
-        var isInvalidUserID by rememberSaveable { mutableStateOf(false) }
-        var isInvalidPassword by rememberSaveable { mutableStateOf(false) }
-
-        fun validate(name: String, maxLength: Int = 16): Boolean {
-          return name.length > maxLength || name.isEmpty()
-        }
+        val nameLimit = 16
+        val idLimit = 16
+        val passwordLimit = 16
 
         CustomDialog(
           icon = Icons.Default.AccountCircle,
@@ -310,7 +306,7 @@ class MainActivity : ComponentActivity() {
             me.id = newUserID
             me.password = newPassword
           },
-          enableConfirm = !isInvalidDisplayName && !isInvalidUserID && !isInvalidPassword
+          enableConfirm = (newName.isNotBlank() && newName.count() <= nameLimit) && (newUserID.isNotBlank() && newUserID.count() <= idLimit) && (newPassword.isNotBlank() && newPassword.count() <= passwordLimit)
         ) {
           Column {
             // Set Display Name
@@ -318,28 +314,23 @@ class MainActivity : ComponentActivity() {
               value = newName,
               onValueChange = {
                 newName = it
-                isInvalidDisplayName = validate(newName)
               },
-              label = { Text(if (isInvalidDisplayName) "Display Name *" else "Display Name") },  // TODO string resource
+              label = { Text(if (newName.isBlank() || newName.count() > nameLimit) "Display Name *" else "Display Name") },  // TODO string resource
               placeholder = { Text(stringResource(R.string.placeholder_username)) },
               singleLine = true,
               supportingText = {
                 Text(
-                  text = "Limit: ${newName.length}/16",  // TODO string resource
+                  text = "Limit: ${newName.length}/$nameLimit",  // TODO string resource
                   textAlign = TextAlign.End,
                   modifier = Modifier.fillMaxWidth()
                 )
               },
-              isError = isInvalidDisplayName,
+              isError = newName.isBlank() || newName.count() > nameLimit,
 
               keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
               keyboardActions = KeyboardActions(
                 onDone = {
-                  isInvalidDisplayName = validate(newName)
-
-                  if (!isInvalidDisplayName) {
-                    // TODO go to next text-field
-                  }
+                  // TODO go to next text-field
                 }
               ),
 
@@ -354,28 +345,23 @@ class MainActivity : ComponentActivity() {
               value = newUserID,
               onValueChange = {
                 newUserID = it
-                isInvalidUserID = validate(newUserID)
               },
-              label = { Text(if (isInvalidUserID) "User ID *" else "User ID") },  // TODO string resource
+              label = { Text(if (newUserID.isBlank() || newUserID.count() > idLimit) "User ID *" else "User ID") },  // TODO string resource
               placeholder = { Text(stringResource(R.string.placeholder_userid)) },
               singleLine = true,
               supportingText = {
                 Text(
-                  text = "Limit: ${newUserID.length}/16",  // TODO string resource
+                  text = "Limit: ${newUserID.length}/$idLimit",  // TODO string resource
                   textAlign = TextAlign.End,
                   modifier = Modifier.fillMaxWidth()
                 )
               },
-              isError = isInvalidUserID,
+              isError = newUserID.isBlank() || newUserID.count() > idLimit,
 
               keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
               keyboardActions = KeyboardActions(
                 onDone = {
-                  isInvalidUserID = validate(newUserID)
-
-                  if (!isInvalidUserID) {
                     // TODO go to next text-field
-                  }
                 }
               ),
 
@@ -390,28 +376,23 @@ class MainActivity : ComponentActivity() {
               value = newPassword,
               onValueChange = {
                 newPassword = it
-                isInvalidPassword = validate(newPassword)
               },
-              label = { Text(if (isInvalidPassword) "Password *" else "Password") },  // TODO string resource
+              label = { Text(if (newPassword.isBlank() || newPassword.count() > passwordLimit) "Password *" else "Password") },  // TODO string resource
               placeholder = { Text(stringResource(R.string.placeholder_password)) },
               singleLine = true,
               supportingText = {
                 Text(
-                  text = "Limit: ${newPassword.length}/16",  // TODO string resource
+                  text = "Limit: ${newPassword.length}/$passwordLimit",  // TODO string resource
                   textAlign = TextAlign.End,
                   modifier = Modifier.fillMaxWidth()
                 )
               },
-              isError = isInvalidPassword,
+              isError = newPassword.isBlank() || newPassword.count() > passwordLimit,
 
               keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
               keyboardActions = KeyboardActions(
                 onDone = {
-                  isInvalidPassword = validate(newPassword)
-
-                  if (!isInvalidPassword) {
                     // TODO go to next text-field
-                  }
                 }
               ),
 
