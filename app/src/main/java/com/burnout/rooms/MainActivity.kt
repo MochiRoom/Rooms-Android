@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -57,8 +58,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -71,19 +74,28 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.burnout.rooms.ui.theme.RoomsTheme
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
 
 // Get Current UNIX Timestamp
 //fun time(): Long {
 //  return System.currentTimeMillis() / 1000
 //}
+
+fun String.isValid(limit: Int): Boolean {
+  return this.isNotBlank() && this.length <= limit
+}
 
 // Main Activity
 class MainActivity : ComponentActivity() {
@@ -96,6 +108,9 @@ class MainActivity : ComponentActivity() {
 
   private val server: RoomsAPI = RoomsAPI()
 
+  lateinit var drawerState: DrawerState
+  lateinit var scope: CoroutineScope
+
   // onCreate Function
   @SuppressLint("CoroutineCreationDuringComposition")
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -106,10 +121,12 @@ class MainActivity : ComponentActivity() {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
           keyboardController = LocalSoftwareKeyboardController.current
 
-          LaunchThreads()
+//          LaunchThreads()
+//          server.connect()
+//          server.login("alma", "ko-rte")
 
-          val drawerState = rememberDrawerState(DrawerValue.Open)
-          val scope = rememberCoroutineScope()
+          drawerState = rememberDrawerState(initialValue = DrawerValue.Open, confirmStateChange = { keyboardController?.hide(); true })
+          scope = rememberCoroutineScope()
 
           var selectedItem by rememberSaveable { mutableStateOf(0) }
           var selectedRoom by rememberSaveable { mutableStateOf("") }
@@ -205,16 +222,7 @@ class MainActivity : ComponentActivity() {
                   }
 
                   // Utility Bar (Bottom)
-                  Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                      .fillMaxSize()
-                      .padding(start = 20.dp, end = 20.dp)
-                      .wrapContentHeight(Alignment.Bottom)
-                  ) {
-                    UtilityBar()
-                  }
+                  UtilityBar()
                 }
               }
             },
@@ -233,7 +241,11 @@ class MainActivity : ComponentActivity() {
   override fun onDestroy() {
     super.onDestroy()
 
-    server.disconnect()
+//      server.disconnect()
+  }
+
+  override fun onBackPressed() {
+    scope.launch { drawerState.open() }
   }
 
   @SuppressLint("CoroutineCreationDuringComposition")
@@ -257,40 +269,41 @@ class MainActivity : ComponentActivity() {
   private fun UtilityBar() {
     var openedDialog by rememberSaveable { mutableStateOf(0) }
 
-    // Account Button
-    IconButton(
-      content = { Icon(Icons.Default.AccountCircle, null) },
-      onClick = { openedDialog = 1 },
-      modifier = Modifier.padding(4.dp),
-    )
+    Row(
+      horizontalArrangement = Arrangement.SpaceEvenly,
+      verticalAlignment = Alignment.CenterVertically,
 
-    // Settings Button
-    IconButton(
-      content = { Icon(Icons.Default.Settings, null) },
-      onClick = { openedDialog = 2 },
-      modifier = Modifier.padding(4.dp)
-    )
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(start = 40.dp, end = 40.dp)
+        .wrapContentHeight(Alignment.Bottom)
+    ) {
+      // Account Button
+      IconButton(
+        content = { Icon(Icons.Default.AccountCircle, null) },
+        onClick = { openedDialog = 1 },
+      )
 
-    // Open Homepage Button
-    IconButton(
-      content = { Icon(painterResource(R.drawable.ic_open_in_browser), null) },
-      onClick = {
-        startActivity(
-          Intent(
-            Intent.ACTION_VIEW,
-            Uri.parse("http://chat.toaster.hu")
+      // Settings Button
+      IconButton(
+        content = { Icon(Icons.Default.Settings, null) },
+        onClick = { openedDialog = 2 },
+      )
+
+      // Open Homepage Button
+      IconButton(
+        content = { Icon(painterResource(R.drawable.ic_open_in_browser), null) },
+        onClick = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://chat.toaster.hu"))) }
+      )
+
+        if (BuildConfig.DEBUG) {
+          // DevMode Button
+          IconButton(
+            content = { Icon(Icons.Default.Build, null, Modifier.padding(4.dp)) },
+            onClick = { openedDialog = 3 },
           )
-        )
-      }, // TODO string resource
-      modifier = Modifier.padding(4.dp)
-    )
-
-    // DevMode Button
-    IconButton(
-      content = { Icon(Icons.Default.Build, null, Modifier.padding(4.dp)) },
-      onClick = { openedDialog = 3 },
-      modifier = Modifier.padding(4.dp)
-    )
+        }
+    }
 
     when (openedDialog) {
       // Nothing
@@ -298,13 +311,13 @@ class MainActivity : ComponentActivity() {
 
       // Account Dialog
       1 -> {
-        var newName by rememberSaveable { mutableStateOf(me.name) }
-        var newUserID by rememberSaveable { mutableStateOf(me.id) }
-        var newPassword by rememberSaveable { mutableStateOf(me.password) }
-
         val nameLimit = 16
         val idLimit = 16
         val passwordLimit = 16
+
+        var newName by rememberSaveable { mutableStateOf(me.name) }
+        var newUserID by rememberSaveable { mutableStateOf(me.id) }
+        var newPassword by rememberSaveable { mutableStateOf(me.password) }
 
         val confirm = {
           openedDialog = 0
@@ -313,22 +326,15 @@ class MainActivity : ComponentActivity() {
           me.password = newPassword
         }
 
-        fun isValid(type: Int = 3): Boolean {
-          return when (type) {
-            0 -> newName.isNotBlank() && newName.length <= nameLimit
-            1 -> newUserID.isNotBlank() && newUserID.length <= idLimit
-            2 -> newPassword.isNotBlank() && newPassword.length <= passwordLimit
-            else -> isValid(0) && isValid(1) && isValid(2)
-          }
+        // Validate New User Info
+        fun isValid(): Boolean {
+          return newName.isValid(nameLimit) && newUserID.isValid(idLimit) && newPassword.isValid(passwordLimit)
         }
 
         CustomDialog(
           icon = Icons.Default.AccountCircle,
           heading = "My Account",
-          onDismiss = {
-            openedDialog = 0
-            newName = me.name
-          },
+          onDismiss = { openedDialog = 0 },
           onConfirm = { confirm() },
           enableConfirm = isValid()
         ) {
@@ -336,20 +342,14 @@ class MainActivity : ComponentActivity() {
             // Set Display Name
             OutlinedTextField(
               value = newName,
-              onValueChange = {
-                newName = it
-              },
+              onValueChange = { newName = it },
+
               label = { Text("Display Name") },  // TODO string resource
               placeholder = { Text(stringResource(R.string.placeholder_username)) },
+
               singleLine = true,
-              supportingText = {
-                Text(
-                  text = "Limit: ${newName.length}/$nameLimit",  // TODO string resource
-                  textAlign = TextAlign.End,
-                  modifier = Modifier.fillMaxWidth()
-                )
-              },
-              isError = !isValid(0),
+              supportingText = { LimitText(newName.length, nameLimit) },
+              isError = !newName.isValid(nameLimit),
 
               keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
 
@@ -357,25 +357,20 @@ class MainActivity : ComponentActivity() {
                 .wrapContentWidth(Alignment.CenterHorizontally)
                 .wrapContentHeight(Alignment.Top)
                 .padding(top = 16.dp)
+                .width(256.dp)
             )
 
             // Set User ID
             OutlinedTextField(
               value = newUserID,
-              onValueChange = {
-                newUserID = it
-              },
+              onValueChange = { newUserID = it },
+
               label = { Text("User ID") },  // TODO string resource
               placeholder = { Text(stringResource(R.string.placeholder_userid)) },
+
               singleLine = true,
-              supportingText = {
-                Text(
-                  text = "Limit: ${newUserID.length}/$idLimit",  // TODO string resource
-                  textAlign = TextAlign.End,
-                  modifier = Modifier.fillMaxWidth()
-                )
-              },
-              isError = !isValid(1),
+              supportingText = { LimitText(newUserID.length, idLimit) },
+              isError = !newUserID.isValid(idLimit),
 
               keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
 
@@ -383,25 +378,20 @@ class MainActivity : ComponentActivity() {
                 .wrapContentWidth(Alignment.CenterHorizontally)
                 .wrapContentHeight(Alignment.Top)
                 .padding(top = 16.dp)
+                .width(256.dp)
             )
 
             // Set Password
             OutlinedTextField(
               value = newPassword,
-              onValueChange = {
-                newPassword = it
-              },
+              onValueChange = { newPassword = it },
+
               label = { Text("Password") },  // TODO string resource
               placeholder = { Text(stringResource(R.string.placeholder_password)) },
+
               singleLine = true,
-              supportingText = {
-                Text(
-                  text = "Limit: ${newPassword.length}/$passwordLimit",  // TODO string resource
-                  textAlign = TextAlign.End,
-                  modifier = Modifier.fillMaxWidth()
-                )
-              },
-              isError = !isValid(2),
+              supportingText = { LimitText(newPassword.length, passwordLimit) },
+              isError = !newPassword.isValid(passwordLimit),
 
               keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
               keyboardActions = KeyboardActions(onDone = { if (isValid()) confirm() }),
@@ -410,6 +400,7 @@ class MainActivity : ComponentActivity() {
                 .wrapContentWidth(Alignment.CenterHorizontally)
                 .wrapContentHeight(Alignment.Top)
                 .padding(top = 16.dp)
+                .width(256.dp)
             )
           }
         }
@@ -422,9 +413,7 @@ class MainActivity : ComponentActivity() {
           heading = "Settings",
           onDismiss = { openedDialog = 0 },
           onConfirm = { openedDialog = 0 }
-        ) {
-          CircularProgressIndicator()
-        }
+        ) { CircularProgressIndicator() }
       }
 
       // DevMode Dialog
@@ -434,125 +423,49 @@ class MainActivity : ComponentActivity() {
           heading = "DevMode",
           onDismiss = { openedDialog = 0 },
           onConfirm = { openedDialog = 0 }
-        ) {
-          CircularProgressIndicator()
-        }
+        ) { CircularProgressIndicator() }
       }
 
-      else -> {
-        openedDialog = 0
-      }
+      else -> { openedDialog = 0 }
     }
   }
-
-  // DevMode Screen
-//  @Composable
-//  private fun DevMode() {
-//    var url by remember { mutableStateOf(serverURL) }
-//    var port by remember { mutableStateOf(wsPort) }
-//
-//    Box(modifier = Modifier.fillMaxSize()) {
-//      Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-//        Text(
-//          text = "DevMode Screen",
-//          modifier = Modifier.padding(8.dp)
-//        )
-//
-//        // Change Main Server URL
-//        OutlinedTextField(
-//          value = url,
-//          onValueChange = { url = it },
-//          singleLine = true,
-//          label = { Text("Server URL") },
-//          placeholder = { Text("google.com") },
-//
-//          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-//          keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() })
-//        )
-//
-//        // Edit WebSocket Port
-//        Row(horizontalArrangement = Arrangement.Center) {
-//          OutlinedTextField(
-//            value = port.toString(),
-//            onValueChange = {
-//              if (it.length <= 5 && it.isDigitsOnly()) port = it.toInt()
-//            },
-//            singleLine = true,
-//            label = { Text("WS Port") },
-//            placeholder = { Text("443") },
-//
-//            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-//            keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() })
-//          )
-//        }
-//
-//        // Create GET Request
-////              Button(
-////                content = { Text("Get Request") },
-////                onClick = { getRoomData("00000000") },
-////                modifier = Modifier.padding(16.dp)
-////              )
-////            }
-//
-//        // Apply Changes
-//        Button(
-//          content = { Text("Apply Changes") },
-//          onClick = {
-//            // Apply Changes
-//            if (serverURL != url || wsPort != port) {
-//              serverURL = url
-//              wsPort = port
-//
-//              socket?.close(69, null)
-//            }
-//
-//            //super.recreate()
-//          },
-//          modifier = Modifier
-//            .fillMaxSize()
-//            .padding(16.dp)
-//            .wrapContentWidth(Alignment.CenterHorizontally)
-//            .wrapContentHeight(Alignment.Bottom)
-//        )
-//      }
-//    }
-//  }
 
   // Join/Create Room
   @Composable
   fun AddRoom(scope: CoroutineScope, drawerState: DrawerState) {
+    val idLength = 8
+    val nameLimit = 16
+
     var roomID by rememberSaveable { mutableStateOf("") }
     var roomName by rememberSaveable { mutableStateOf("") }
-
-    val idLimit = 8
-    val nameLimit = 16
 
     Column(
       modifier = Modifier
         .fillMaxSize()
         .padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally
     ) {
+      Text (
+        text = "Add / Join Room",
+        fontSize = 24.sp,
+        modifier = Modifier
+          .padding(top=24.dp)
+      )
       OutlinedTextField(
         value = roomID,
-        onValueChange = { roomID = it.replace(" ", "-") },
+        onValueChange = { roomID = it.replace(' ', '-') },
+
         label = { Text("Room ID") },  // TODO string resource
-        placeholder = { Text("my-awesome-room") },  // TODO string resource
+        placeholder = { Text("CityHall") },  // TODO string resource
+
         singleLine = true,
-        supportingText = {
-          Text(
-            text = "Limit: ${roomID.length}/$idLimit",  // TODO string resource
-            textAlign = TextAlign.Start,
-            modifier = Modifier.fillMaxWidth()
-          )
-        },
-        isError = roomID.isBlank() || roomID.length > idLimit,
+        supportingText = { if (roomID.length != idLength) Text("ID Must be $idLength Characters", textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth()) },
+        isError = roomID.length != idLength,
 
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
 
         modifier = Modifier
-          .wrapContentWidth(Alignment.CenterHorizontally)
-          .wrapContentHeight(Alignment.Top)
           .padding(top = 16.dp)
+          .width(256.dp)
       )
 
       val createRoom = {
@@ -565,38 +478,33 @@ class MainActivity : ComponentActivity() {
 
       OutlinedTextField(
         value = roomName,
-        onValueChange = { roomName = it },
+        onValueChange = { if (it.length <= nameLimit) roomName = it },
+
         label = { Text("Room Name") }, // TODO string resource
         placeholder = { Text("My Awesome Room") },  // TODO string resource
+
         singleLine = true,
-        supportingText = {
-          Text(
-            text = "Limit: ${roomName.length}/$nameLimit",  // TODO string resource
-            textAlign = TextAlign.Start,
-            modifier = Modifier.fillMaxWidth()
-          )
-        },
-        isError = roomName.isBlank() || roomName.length > nameLimit,
+        supportingText = { LimitText(roomName.length, nameLimit) },
+        isError = !roomName.isValid(nameLimit),
 
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { createRoom() }),
 
         modifier = Modifier
-          .fillMaxWidth()
-          .wrapContentWidth(Alignment.CenterHorizontally)
-          .wrapContentHeight(Alignment.Top)
           .padding(top = 16.dp)
+          .width(256.dp)
       )
 
       Button(
         content = { Text("Add Room") },  // TODO string resource
         onClick = { createRoom() },
-        enabled = !rooms.containsKey(roomID) && roomID.isNotBlank() && roomName.isNotBlank() && roomID.length <= idLimit && roomName.length <= nameLimit,
+        enabled = !rooms.containsKey(roomID) && roomID.length == idLength && roomName.isValid(nameLimit),
 
         modifier = Modifier
           .fillMaxSize()
           .wrapContentHeight(Alignment.Bottom)
           .padding(16.dp)
+          .width(256.dp)
       )
     }
   }
@@ -674,7 +582,7 @@ class MainActivity : ComponentActivity() {
       TextField(
         value = text,
         onValueChange = { text = it },
-        label = { Text("Hello!") },  // TODO string resource
+        label = { Text("Send Message") },  // TODO string resource
         placeholder = { Text(stringResource(R.string.chat_placeholder)) },
 
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -697,6 +605,15 @@ class MainActivity : ComponentActivity() {
       )
     }
   }
+}
+
+@Composable
+fun LimitText(length: Int, limit: Int) {
+  Text(
+    text = "Limit: $length/$limit",  // TODO string resource
+    textAlign = TextAlign.End,
+    modifier = Modifier.fillMaxWidth()
+  )
 }
 
 @Composable

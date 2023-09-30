@@ -1,10 +1,14 @@
 package com.burnout.rooms
 
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okio.IOException
 
 data class ConnectionData(
   var serverURL: String = "", var websocketPort: Int = 0,
@@ -15,16 +19,18 @@ data class ConnectionData(
 class RoomsAPI {
   var connection: ConnectionData = ConnectionData()
 
+  var url = "chat.toaster.hu"
+
   // Networking
   private val client = OkHttpClient()
   private lateinit var socket: WebSocket
 
   // Connect to Server
-  fun connect(serverURL: String = "chat.toaster.hu", websocketPort: Int = 443) {
-    connection = ConnectionData(serverURL, websocketPort)
+  fun connect(websocketPort: Int = 443) {
+    connection = ConnectionData(url, websocketPort)
 
     try {
-      val request = Request.Builder().url("ws://$serverURL:${connection.websocketPort}").build()
+      val request = Request.Builder().url("ws://$url:${connection.websocketPort}").build()
       socket = client.newWebSocket(request, Listener(this@RoomsAPI))
     } finally {
       throw Exception("Connection Failed")
@@ -34,6 +40,27 @@ class RoomsAPI {
   // Disconnect from the Server
   fun disconnect() {
     connection.isConnected = false
+    socket.close(69, "f u")
+  }
+
+  fun login(id: String, password: String) {
+    val okHttpClient = OkHttpClient()
+    val request = Request.Builder()
+      .post("{\"username\":\"$id\", \"password\":\"$password\"}".toRequestBody())
+      .url(url)
+      .build()
+
+    okHttpClient.newCall(request).enqueue(object : Callback {
+      override fun onFailure(call: Call, e: IOException) {
+        // Handle this
+        throw Exception("POST Failure: ${e.message}")
+      }
+
+      override fun onResponse(call: Call, response: Response) {
+        // Handle this
+        throw Exception("POST Response: ${response.message}")
+      }
+  })
   }
 
   private class Listener(api: RoomsAPI) : WebSocketListener() {
