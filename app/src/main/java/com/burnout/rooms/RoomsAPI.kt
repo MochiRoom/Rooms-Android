@@ -28,7 +28,6 @@ class RoomsAPI {
   // Connect to Server
   fun connect(websocketPort: Int = 443) {
     connection = ConnectionData(url, websocketPort)
-
     try {
       val request = Request.Builder().url("ws://$url:${connection.websocketPort}").build()
       socket = client.newWebSocket(request, Listener(this@RoomsAPI))

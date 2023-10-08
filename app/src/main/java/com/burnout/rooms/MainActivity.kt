@@ -7,11 +7,13 @@ package com.burnout.rooms
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.IntentSender
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +32,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -38,7 +41,6 @@ import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerState
@@ -58,10 +60,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -69,20 +69,25 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.burnout.rooms.ui.theme.RoomsTheme
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.auth.api.identity.BeginSignInRequest
+import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.auth.api.identity.SignInClient
+import com.google.android.gms.auth.api.identity.SignInCredential
+import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -111,10 +116,35 @@ class MainActivity : ComponentActivity() {
   lateinit var drawerState: DrawerState
   lateinit var scope: CoroutineScope
 
+  // Sign In
+  private lateinit var oneTapClient: SignInClient
+  private lateinit var signInRequest: BeginSignInRequest
+
+  private var signInCredential: SignInCredential? = null
+
+  private val REQ_ONE_TAP = 2
+
   // onCreate Function
   @SuppressLint("CoroutineCreationDuringComposition")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+
+    oneTapClient = Identity.getSignInClient(this)
+    signInRequest = BeginSignInRequest.builder()
+      .setPasswordRequestOptions(
+        BeginSignInRequest.PasswordRequestOptions.builder()
+          .setSupported(true)
+          .build()
+      )
+      .setGoogleIdTokenRequestOptions(
+        BeginSignInRequest.GoogleIdTokenRequestOptions.builder()
+          .setSupported(true)
+          .setServerClientId(getString(R.string.client_id))
+          .setFilterByAuthorizedAccounts(false)
+          .build()
+      )
+      .setAutoSelectEnabled(true)
+      .build()
 
     setContent {
       RoomsTheme(dynamicColor = false) {
@@ -125,7 +155,9 @@ class MainActivity : ComponentActivity() {
 //          server.connect()
 //          server.login("alma", "ko-rte")
 
-          drawerState = rememberDrawerState(initialValue = DrawerValue.Open, confirmStateChange = { keyboardController?.hide(); true })
+          drawerState = rememberDrawerState(
+            initialValue = DrawerValue.Open,
+            confirmStateChange = { keyboardController?.hide(); true })
           scope = rememberCoroutineScope()
 
           var selectedItem by rememberSaveable { mutableStateOf(0) }
@@ -238,10 +270,38 @@ class MainActivity : ComponentActivity() {
     }
   }
 
-  override fun onDestroy() {
-    super.onDestroy()
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode, resultCode, data)
 
-//      server.disconnect()
+    when (requestCode) {
+      REQ_ONE_TAP -> {
+        try {
+          signInCredential = oneTapClient.getSignInCredentialFromIntent(data)
+          when {
+            signInCredential?.googleIdToken != null -> {
+              // Got an ID token from Google. Use it to authenticate
+              // with your backend.
+              Log.d("login", "Got ID token.")
+            }
+
+            signInCredential?.password != null -> {
+              // Got a saved username and password. Use them to authenticate
+              // with your backend.
+              Log.d("login", "Got password.")
+            }
+
+            else -> {
+              // Shouldn't happen.
+              Log.d("login", "No ID token or password!")
+            }
+          }
+        } catch (e: ApiException) {
+          e.message?.let { Log.d("login", it) }
+          signInCredential = null
+          // ...
+        }
+      }
+    }
   }
 
   override fun onBackPressed() {
@@ -269,6 +329,8 @@ class MainActivity : ComponentActivity() {
   private fun UtilityBar() {
     var openedDialog by rememberSaveable { mutableStateOf(0) }
 
+    var isSignedIn by rememberSaveable { mutableStateOf(false) }
+
     Row(
       horizontalArrangement = Arrangement.SpaceEvenly,
       verticalAlignment = Alignment.CenterVertically,
@@ -280,134 +342,177 @@ class MainActivity : ComponentActivity() {
     ) {
       // Account Button
       IconButton(
-        content = { Icon(Icons.Default.AccountCircle, null) },
-        onClick = { openedDialog = 1 },
+        content = {
+          if (!isSignedIn)
+            Icon(Icons.Default.AccountCircle, null)
+          else {
+            if (signInCredential?.profilePictureUri != null)
+              AsyncImage(
+                model = ImageRequest.Builder(context = LocalContext.current)
+                  .data(signInCredential!!.profilePictureUri)
+                  .build(),
+                contentDescription = signInCredential!!.profilePictureUri?.toString(),
+
+                error = painterResource(R.drawable.google),
+                placeholder = painterResource(R.drawable.ic_downloading),
+
+                modifier = Modifier
+                  .size(24.dp)
+                  .clip(RoundedCornerShape(10.dp))
+              )
+            else
+              Image(painterResource(R.drawable.google), null, Modifier.size(24.dp))
+          }
+        },
+        onClick = { openedDialog = if (!isSignedIn) 1 else 2 },
       )
 
       // Settings Button
       IconButton(
         content = { Icon(Icons.Default.Settings, null) },
-        onClick = { openedDialog = 2 },
+        onClick = { openedDialog = 3 },
       )
 
       // Open Homepage Button
       IconButton(
         content = { Icon(painterResource(R.drawable.ic_open_in_browser), null) },
-        onClick = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("http://chat.toaster.hu"))) }
-      )
-
-        if (BuildConfig.DEBUG) {
-          // DevMode Button
-          IconButton(
-            content = { Icon(Icons.Default.Build, null, Modifier.padding(4.dp)) },
-            onClick = { openedDialog = 3 },
+        onClick = {
+          startActivity(
+            Intent(
+              Intent.ACTION_VIEW,
+              Uri.parse(getString(R.string.chat_webpage))
+            )
           )
         }
+      )
+
+      if (BuildConfig.DEBUG) {
+        // DevMode Button
+        IconButton(
+          content = { Icon(Icons.Default.Build, null, Modifier.padding(4.dp)) },
+          onClick = { openedDialog = 4 },
+        )
+      }
     }
 
     when (openedDialog) {
       // Nothing
       0 -> {}
 
-      // Account Dialog
+      // Sign In Page
       1 -> {
+        var newName by rememberSaveable { mutableStateOf("") }
         val nameLimit = 16
-        val idLimit = 16
-        val passwordLimit = 16
 
-        var newName by rememberSaveable { mutableStateOf(me.name) }
-        var newUserID by rememberSaveable { mutableStateOf(me.id) }
-        var newPassword by rememberSaveable { mutableStateOf(me.password) }
-
-        val confirm = {
-          openedDialog = 0
+        fun confirm() {
           me.name = newName
-          me.id = newUserID
-          me.password = newPassword
-        }
-
-        // Validate New User Info
-        fun isValid(): Boolean {
-          return newName.isValid(nameLimit) && newUserID.isValid(idLimit) && newPassword.isValid(passwordLimit)
+          openedDialog = 0
         }
 
         CustomDialog(
           icon = Icons.Default.AccountCircle,
-          heading = "My Account",
+          heading = "Sign In",
           onDismiss = { openedDialog = 0 },
           onConfirm = { confirm() },
-          enableConfirm = isValid()
+          enableConfirm = newName.isValid(nameLimit) // check sign in state
         ) {
-          Column {
-            // Set Display Name
+          Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // Set Guest Name
             OutlinedTextField(
               value = newName,
               onValueChange = { newName = it },
 
-              label = { Text("Display Name") },  // TODO string resource
-              placeholder = { Text(stringResource(R.string.placeholder_username)) },
+              label = { Text("Guest Name") },
+              placeholder = { Text("Guest User") },
 
               singleLine = true,
               supportingText = { LimitText(newName.length, nameLimit) },
               isError = !newName.isValid(nameLimit),
-
-              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-
-              modifier = Modifier
-                .wrapContentWidth(Alignment.CenterHorizontally)
-                .wrapContentHeight(Alignment.Top)
-                .padding(top = 16.dp)
-                .width(256.dp)
-            )
-
-            // Set User ID
-            OutlinedTextField(
-              value = newUserID,
-              onValueChange = { newUserID = it },
-
-              label = { Text("User ID") },  // TODO string resource
-              placeholder = { Text(stringResource(R.string.placeholder_userid)) },
-
-              singleLine = true,
-              supportingText = { LimitText(newUserID.length, idLimit) },
-              isError = !newUserID.isValid(idLimit),
-
-              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-
-              modifier = Modifier
-                .wrapContentWidth(Alignment.CenterHorizontally)
-                .wrapContentHeight(Alignment.Top)
-                .padding(top = 16.dp)
-                .width(256.dp)
-            )
-
-            // Set Password
-            OutlinedTextField(
-              value = newPassword,
-              onValueChange = { newPassword = it },
-
-              label = { Text("Password") },  // TODO string resource
-              placeholder = { Text(stringResource(R.string.placeholder_password)) },
-
-              singleLine = true,
-              supportingText = { LimitText(newPassword.length, passwordLimit) },
-              isError = !newPassword.isValid(passwordLimit),
+              enabled = !isSignedIn,
 
               keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-              keyboardActions = KeyboardActions(onDone = { if (isValid()) confirm() }),
+              keyboardActions = KeyboardActions(onDone = { if (newName.isValid(nameLimit)) confirm() }),
 
               modifier = Modifier
-                .wrapContentWidth(Alignment.CenterHorizontally)
-                .wrapContentHeight(Alignment.Top)
                 .padding(top = 16.dp)
+                .width(256.dp)
+            )
+
+            Text(text = "or", fontSize = 16.sp)
+
+            Button(
+              content = {
+                Image(
+                  painter = painterResource(R.drawable.google),
+                  contentDescription = null,
+                  modifier = Modifier
+                    .padding(8.dp)
+                    .size(16.dp)
+                )
+                Text("Sign In using Google")
+              },
+
+              onClick = {
+                isSignedIn = true
+                oneTapClient.beginSignIn(signInRequest)
+                  .addOnSuccessListener(this@MainActivity) { result ->
+                    try {
+                      startIntentSenderForResult(
+                        result.pendingIntent.intentSender, REQ_ONE_TAP,
+                        null, 0, 0, 0, null
+                      )
+                    } catch (e: IntentSender.SendIntentException) {
+                      Log.e("login", "Couldn't start One Tap UI: ${e.localizedMessage}")
+                    }
+                  }
+                  .addOnFailureListener(this@MainActivity) { e ->
+                    // No saved credentials found. Launch the One Tap sign-up flow, or
+                    // do nothing and continue presenting the signed-out UI.
+                    e.localizedMessage?.let { Log.d("login", it) }
+                  }
+              },
+
+              modifier = Modifier
+                .padding(top = 8.dp)
                 .width(256.dp)
             )
           }
         }
       }
 
-      // Settings Dialog
+      // My Account Dialog
       2 -> {
+        CustomDialog(
+          icon = Icons.Default.AccountCircle,
+          heading = "My Account",
+          onDismiss = { openedDialog = 0 },
+          onConfirm = { openedDialog = 0 }
+        ) {
+          Column(
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+          ) {
+            OutlinedCard(
+              modifier = Modifier.padding(16.dp)
+            ) {
+              Text("Signed in as ${signInCredential?.displayName}", Modifier.padding(8.dp))
+            }
+
+            Button(
+              content = { Text("Log Out") },
+              onClick = {
+                openedDialog = 0
+                isSignedIn = false
+                oneTapClient.signOut()
+                signInCredential = null
+              }
+            )
+          }
+        }
+      }
+
+      // Settings Dialog
+      3 -> {
         CustomDialog(
           icon = Icons.Default.Settings,
           heading = "Settings",
@@ -417,7 +522,7 @@ class MainActivity : ComponentActivity() {
       }
 
       // DevMode Dialog
-      3 -> {
+      4 -> {
         CustomDialog(
           icon = Icons.Default.Build,
           heading = "DevMode",
@@ -426,7 +531,9 @@ class MainActivity : ComponentActivity() {
         ) { CircularProgressIndicator() }
       }
 
-      else -> { openedDialog = 0 }
+      else -> {
+        openedDialog = 0
+      }
     }
   }
 
@@ -444,11 +551,11 @@ class MainActivity : ComponentActivity() {
         .fillMaxSize()
         .padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally
     ) {
-      Text (
+      Text(
         text = "Add / Join Room",
         fontSize = 24.sp,
         modifier = Modifier
-          .padding(top=24.dp)
+          .padding(top = 24.dp)
       )
       OutlinedTextField(
         value = roomID,
@@ -458,7 +565,13 @@ class MainActivity : ComponentActivity() {
         placeholder = { Text("CityHall") },  // TODO string resource
 
         singleLine = true,
-        supportingText = { if (roomID.length != idLength) Text("ID Must be $idLength Characters", textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth()) },
+        supportingText = {
+          if (roomID.length != idLength) Text(
+            "ID Must be $idLength Characters",
+            textAlign = TextAlign.End,
+            modifier = Modifier.fillMaxWidth()
+          )
+        },
         isError = roomID.length != idLength,
 
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -498,7 +611,9 @@ class MainActivity : ComponentActivity() {
       Button(
         content = { Text("Add Room") },  // TODO string resource
         onClick = { createRoom() },
-        enabled = !rooms.containsKey(roomID) && roomID.length == idLength && roomName.isValid(nameLimit),
+        enabled = !rooms.containsKey(roomID) && roomID.length == idLength && roomName.isValid(
+          nameLimit
+        ),
 
         modifier = Modifier
           .fillMaxSize()
@@ -613,49 +728,6 @@ fun LimitText(length: Int, limit: Int) {
     text = "Limit: $length/$limit",  // TODO string resource
     textAlign = TextAlign.End,
     modifier = Modifier.fillMaxWidth()
-  )
-}
-
-@Composable
-private fun CustomDialog(
-  icon: ImageVector,
-  heading: String,
-
-  dismissText: String = "Dismiss",
-  confirmText: String = "Confirm",
-
-  enableDismiss: Boolean = true,
-  enableConfirm: Boolean = true,
-
-  onDismiss: () -> Unit,
-  onConfirm: () -> Unit,
-
-  content: @Composable (() -> Unit)
-) {
-  AlertDialog(
-    icon = {
-      Row {
-        Icon(icon, null, Modifier.padding(end = 8.dp))
-        Text(heading)
-      }
-    },
-    text = content,
-
-    confirmButton = {
-      TextButton(
-        content = { Text(confirmText) },
-        onClick = onConfirm,
-        enabled = enableConfirm
-      )
-    },
-    onDismissRequest = onDismiss,
-    dismissButton = {
-      TextButton(
-        content = { Text(dismissText) },
-        onClick = onDismiss,
-        enabled = enableDismiss
-      )
-    }
   )
 }
 

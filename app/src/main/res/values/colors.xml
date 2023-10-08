@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="agac_white">#F8D092</color>
+    <color name="agac_cyan">#38A48C</color>
+    <color name="agac_teal">#159096</color>
+    <color name="agac_blue">#195678</color>
+    <color name="agac_purple">#25255D</color>
+    <color name="agac_magenta">#581C56</color>
+
     <color name="purple_200">#220022</color>
     <color name="purple_500">#550055</color>
     <color name="purple_700">#770077</color>

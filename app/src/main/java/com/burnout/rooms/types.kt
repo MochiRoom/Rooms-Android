@@ -1,6 +1,10 @@
 package com.burnout.rooms
 
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import com.google.android.gms.auth.api.identity.BeginSignInRequest
+import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.auth.api.identity.SignInClient
+import com.google.android.gms.auth.api.identity.SignInCredential
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -10,9 +14,10 @@ import kotlinx.serialization.json.Json
 data class User(
   var id: String = "",
   var name: String = "",
-  var password: String = ""
+  var password: String = "",
 ) {
   companion object {
+
     // Convert JSON String to Message
     @Suppress("UnnecessaryOptInAnnotation")
     @OptIn(ExperimentalSerializationApi::class)
