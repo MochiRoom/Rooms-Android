@@ -1,13 +1,12 @@
 @file:OptIn(
-  ExperimentalMaterial3Api::class, ExperimentalMaterial3Api::class,
-  ExperimentalComposeUiApi::class, ExperimentalMaterial3Api::class
+  ExperimentalMaterial3Api::class,
+  ExperimentalComposeUiApi::class
 )
 
 package com.burnout.rooms
 
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.content.IntentSender
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -18,10 +17,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,7 +26,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,13 +52,13 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
@@ -70,7 +66,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
@@ -83,15 +78,9 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.burnout.rooms.ui.theme.RoomsTheme
-import com.google.android.gms.auth.api.identity.BeginSignInRequest
-import com.google.android.gms.auth.api.identity.Identity
-import com.google.android.gms.auth.api.identity.SignInClient
-import com.google.android.gms.auth.api.identity.SignInCredential
-import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
 
 // Get Current UNIX Timestamp
 //fun time(): Long {
@@ -105,46 +94,21 @@ fun String.isValid(limit: Int): Boolean {
 // Main Activity
 class MainActivity : ComponentActivity() {
   // TODO make me & rooms rememberSavable
-  private var me: User = User("userid", "username") // TODO save username & id
   var rooms = SnapshotStateMap<String, Room>()
 
-  // Keyboard Controller
-  private var keyboardController: SoftwareKeyboardController? = null
-
   private val server: RoomsAPI = RoomsAPI()
+  private lateinit var user: User
 
-  lateinit var drawerState: DrawerState
-  lateinit var scope: CoroutineScope
-
-  // Sign In
-  private lateinit var oneTapClient: SignInClient
-  private lateinit var signInRequest: BeginSignInRequest
-
-  private var signInCredential: SignInCredential? = null
-
-  private val REQ_ONE_TAP = 2
+  private var keyboardController: SoftwareKeyboardController? = null
+  private lateinit var drawerState: DrawerState
+  private lateinit var scope: CoroutineScope
 
   // onCreate Function
   @SuppressLint("CoroutineCreationDuringComposition")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
-    oneTapClient = Identity.getSignInClient(this)
-    signInRequest = BeginSignInRequest.builder()
-      .setPasswordRequestOptions(
-        BeginSignInRequest.PasswordRequestOptions.builder()
-          .setSupported(true)
-          .build()
-      )
-      .setGoogleIdTokenRequestOptions(
-        BeginSignInRequest.GoogleIdTokenRequestOptions.builder()
-          .setSupported(true)
-          .setServerClientId(getString(R.string.client_id))
-          .setFilterByAuthorizedAccounts(false)
-          .build()
-      )
-      .setAutoSelectEnabled(true)
-      .build()
+    user = User(this, getString(R.string.client_id))
 
     setContent {
       RoomsTheme(dynamicColor = false) {
@@ -181,9 +145,9 @@ class MainActivity : ComponentActivity() {
                     ) {
                       // "Rooms" Icon
                       Icon(
-                        painterResource(R.drawable.ic_door),
-                        null,
-                        Modifier
+                        painter = painterResource(R.drawable.ic_door),
+                        contentDescription = stringResource(R.string.cd_rooms_icon),
+                        modifier = Modifier
                           .padding(10.dp)
                           .size(32.dp)
                       )
@@ -196,7 +160,7 @@ class MainActivity : ComponentActivity() {
 
                       // Join/Create Room Button
                       IconButton(
-                        content = { Icon(Icons.Default.AddCircle, null) },
+                        content = { Icon(Icons.Default.AddCircle, stringResource(R.string.cd_join_room)) },
                         onClick = {
                           selectedItem = 0
                           scope.launch { drawerState.close() }
@@ -270,40 +234,7 @@ class MainActivity : ComponentActivity() {
     }
   }
 
-  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-    super.onActivityResult(requestCode, resultCode, data)
-
-    when (requestCode) {
-      REQ_ONE_TAP -> {
-        try {
-          signInCredential = oneTapClient.getSignInCredentialFromIntent(data)
-          when {
-            signInCredential?.googleIdToken != null -> {
-              // Got an ID token from Google. Use it to authenticate
-              // with your backend.
-              Log.d("login", "Got ID token.")
-            }
-
-            signInCredential?.password != null -> {
-              // Got a saved username and password. Use them to authenticate
-              // with your backend.
-              Log.d("login", "Got password.")
-            }
-
-            else -> {
-              // Shouldn't happen.
-              Log.d("login", "No ID token or password!")
-            }
-          }
-        } catch (e: ApiException) {
-          e.message?.let { Log.d("login", it) }
-          signInCredential = null
-          // ...
-        }
-      }
-    }
-  }
-
+  @Deprecated("Deprecated in Java")
   override fun onBackPressed() {
     scope.launch { drawerState.open() }
   }
@@ -328,9 +259,12 @@ class MainActivity : ComponentActivity() {
   @Composable
   private fun UtilityBar() {
     var openedDialog by rememberSaveable { mutableStateOf(0) }
+    val isSignedIn by rememberUpdatedState(newValue = user.isSignedIn)
+    val displayName by rememberUpdatedState(newValue = user.credential?.displayName)
 
-    var isSignedIn by rememberSaveable { mutableStateOf(false) }
+    val iconSize = 32.dp
 
+    // Icon Buttons
     Row(
       horizontalArrangement = Arrangement.SpaceEvenly,
       verticalAlignment = Alignment.CenterVertically,
@@ -340,42 +274,38 @@ class MainActivity : ComponentActivity() {
         .padding(start = 40.dp, end = 40.dp)
         .wrapContentHeight(Alignment.Bottom)
     ) {
-      // Account Button
+      // Account
       IconButton(
         content = {
-          if (!isSignedIn)
-            Icon(Icons.Default.AccountCircle, null)
-          else {
-            if (signInCredential?.profilePictureUri != null)
+          if (isSignedIn)
               AsyncImage(
                 model = ImageRequest.Builder(context = LocalContext.current)
-                  .data(signInCredential!!.profilePictureUri)
+                  .data(user.credential!!.profilePictureUri)
                   .build(),
-                contentDescription = signInCredential!!.profilePictureUri?.toString(),
+                contentDescription = user.credential!!.profilePictureUri?.toString(),
 
                 error = painterResource(R.drawable.google),
                 placeholder = painterResource(R.drawable.ic_downloading),
 
                 modifier = Modifier
-                  .size(24.dp)
+                  .size(iconSize)
                   .clip(RoundedCornerShape(10.dp))
               )
-            else
-              Image(painterResource(R.drawable.google), null, Modifier.size(24.dp))
-          }
+          else
+            Icon(Icons.Default.AccountCircle, null, Modifier.size(iconSize))
         },
-        onClick = { openedDialog = if (!isSignedIn) 1 else 2 },
+        onClick = { openedDialog = 10 }
       )
 
       // Settings Button
       IconButton(
-        content = { Icon(Icons.Default.Settings, null) },
-        onClick = { openedDialog = 3 },
+        content = { Icon(Icons.Default.Settings, null, Modifier.size(iconSize)) },
+        onClick = { openedDialog = 100 }
       )
 
       // Open Homepage Button
       IconButton(
-        content = { Icon(painterResource(R.drawable.ic_open_in_browser), null) },
+        content = { Icon(painterResource(R.drawable.ic_open_in_browser), null, Modifier.size(iconSize)) },
         onClick = {
           startActivity(
             Intent(
@@ -389,8 +319,8 @@ class MainActivity : ComponentActivity() {
       if (BuildConfig.DEBUG) {
         // DevMode Button
         IconButton(
-          content = { Icon(Icons.Default.Build, null, Modifier.padding(4.dp)) },
-          onClick = { openedDialog = 4 },
+          content = { Icon(Icons.Default.Build, null, Modifier.size(iconSize)) },
+          onClick = { openedDialog = 1000 }
         )
       }
     }
@@ -399,120 +329,88 @@ class MainActivity : ComponentActivity() {
       // Nothing
       0 -> {}
 
-      // Sign In Page
-      1 -> {
-        var newName by rememberSaveable { mutableStateOf("") }
-        val nameLimit = 16
+      // Account
+      10 -> {
+        var newNickname by rememberSaveable { mutableStateOf(user.nickname) }
+        val nicknameLimit = 16
 
         fun confirm() {
-          me.name = newName
+          if (newNickname.isBlank() && user.credential != null && user.credential?.displayName != null)
+            user.nickname = user.credential?.displayName!!
+
+          if (user.nickname != newNickname) {
+            // Update Nickname
+            // TODO: check server availability
+            if (newNickname.isValid(nicknameLimit)) {
+              user.nickname = newNickname
+              server.setNickname(user.nickname)
+            }
+          }
+
           openedDialog = 0
         }
 
         CustomDialog(
           icon = Icons.Default.AccountCircle,
-          heading = "Sign In",
+          heading = "My Account",
           onDismiss = { openedDialog = 0 },
           onConfirm = { confirm() },
-          enableConfirm = newName.isValid(nameLimit) // check sign in state
+          enableConfirm = newNickname.isNotBlank() || isSignedIn
         ) {
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // Set Guest Name
+            // Set Nickname
             OutlinedTextField(
-              value = newName,
-              onValueChange = { newName = it },
+              value = newNickname,
+              onValueChange = { newNickname = it },
 
-              label = { Text("Guest Name") },
-              placeholder = { Text("Guest User") },
+              label = { Text("Nickname") },
+              placeholder = { Text (if (displayName != null) displayName!! else "Pick Nick") },
 
               singleLine = true,
-              supportingText = { LimitText(newName.length, nameLimit) },
-              isError = !newName.isValid(nameLimit),
-              enabled = !isSignedIn,
 
               keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-              keyboardActions = KeyboardActions(onDone = { if (newName.isValid(nameLimit)) confirm() }),
+              keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() }),
 
               modifier = Modifier
                 .padding(top = 16.dp)
                 .width(256.dp)
             )
 
-            Text(text = "or", fontSize = 16.sp)
+            if (isSignedIn) {
+              Button(
+                content = { Text("Sign Out") },
+                onClick = { user.logout() },
 
-            Button(
-              content = {
-                Image(
-                  painter = painterResource(R.drawable.google),
-                  contentDescription = null,
-                  modifier = Modifier
-                    .padding(8.dp)
-                    .size(16.dp)
-                )
-                Text("Sign In using Google")
-              },
+                modifier = Modifier
+                  .padding(top = 8.dp)
+                  .width(256.dp)
+              )
+            } else {
+              Button(
+                content = {
+                  Image(
+                    painter = painterResource(R.drawable.google),
+                    contentDescription = null,
+                    modifier = Modifier
+                      .padding(8.dp)
+                      .size(16.dp)
+                  )
+                  Text("Sign In using Google")
+                },
 
-              onClick = {
-                isSignedIn = true
-                oneTapClient.beginSignIn(signInRequest)
-                  .addOnSuccessListener(this@MainActivity) { result ->
-                    try {
-                      startIntentSenderForResult(
-                        result.pendingIntent.intentSender, REQ_ONE_TAP,
-                        null, 0, 0, 0, null
-                      )
-                    } catch (e: IntentSender.SendIntentException) {
-                      Log.e("login", "Couldn't start One Tap UI: ${e.localizedMessage}")
-                    }
-                  }
-                  .addOnFailureListener(this@MainActivity) { e ->
-                    // No saved credentials found. Launch the One Tap sign-up flow, or
-                    // do nothing and continue presenting the signed-out UI.
-                    e.localizedMessage?.let { Log.d("login", it) }
-                  }
-              },
+                onClick = { user.login() },
 
-              modifier = Modifier
-                .padding(top = 8.dp)
-                .width(256.dp)
-            )
-          }
-        }
-      }
-
-      // My Account Dialog
-      2 -> {
-        CustomDialog(
-          icon = Icons.Default.AccountCircle,
-          heading = "My Account",
-          onDismiss = { openedDialog = 0 },
-          onConfirm = { openedDialog = 0 }
-        ) {
-          Column(
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-          ) {
-            OutlinedCard(
-              modifier = Modifier.padding(16.dp)
-            ) {
-              Text("Signed in as ${signInCredential?.displayName}", Modifier.padding(8.dp))
+                modifier = Modifier
+                  .padding(top = 8.dp)
+                  .width(256.dp)
+              )
             }
-
-            Button(
-              content = { Text("Log Out") },
-              onClick = {
-                openedDialog = 0
-                isSignedIn = false
-                oneTapClient.signOut()
-                signInCredential = null
-              }
-            )
           }
         }
       }
 
-      // Settings Dialog
-      3 -> {
+      // Settings
+      100 -> {
         CustomDialog(
           icon = Icons.Default.Settings,
           heading = "Settings",
@@ -521,8 +419,8 @@ class MainActivity : ComponentActivity() {
         ) { CircularProgressIndicator() }
       }
 
-      // DevMode Dialog
-      4 -> {
+      // DevMode
+      1000 -> {
         CustomDialog(
           icon = Icons.Default.Build,
           heading = "DevMode",
@@ -561,8 +459,8 @@ class MainActivity : ComponentActivity() {
         value = roomID,
         onValueChange = { roomID = it.replace(' ', '-') },
 
-        label = { Text("Room ID") },  // TODO string resource
-        placeholder = { Text("CityHall") },  // TODO string resource
+        label = { Text("Room ID") },  
+        placeholder = { Text("CityHall") },  
 
         singleLine = true,
         supportingText = {
@@ -593,8 +491,8 @@ class MainActivity : ComponentActivity() {
         value = roomName,
         onValueChange = { if (it.length <= nameLimit) roomName = it },
 
-        label = { Text("Room Name") }, // TODO string resource
-        placeholder = { Text("My Awesome Room") },  // TODO string resource
+        label = { Text("Room Name") }, 
+        placeholder = { Text("My Awesome Room") },  
 
         singleLine = true,
         supportingText = { LimitText(roomName.length, nameLimit) },
@@ -609,7 +507,7 @@ class MainActivity : ComponentActivity() {
       )
 
       Button(
-        content = { Text("Add Room") },  // TODO string resource
+        content = { Text("Add Room") },  
         onClick = { createRoom() },
         enabled = !rooms.containsKey(roomID) && roomID.length == idLength && roomName.isValid(
           nameLimit
@@ -639,44 +537,44 @@ class MainActivity : ComponentActivity() {
     Box(modifier = Modifier.fillMaxSize())
     {
       // Chat Box
-      LazyColumn(state = lazyListState) {
-        rooms[currentRoom]?.let {
-          items(it.messages) { message ->
-            Row(
-              horizontalArrangement = if (message.author.id == me.id) Arrangement.End else Arrangement.Start,
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 4.dp)
-            ) {
-              if (message.author.id != me.id) {
-                //Icon(Icons.Default.AccountCircle, null, Modifier.padding(start=16.dp) )
-                OutlinedCard(Modifier.padding(top = 8.dp, start = 8.dp)) {
-                  Text(
-                    message.author.name,
-                    Modifier.padding(
-                      start = 4.dp,
-                      end = 4.dp,
-                      top = 2.dp,
-                      bottom = 2.dp
-                    )
-                  )
-                }
-              }
-
-              Text(
-                text = message.data,
-                textAlign = TextAlign.Start,
-                modifier = Modifier
-                  .padding(start = 8.dp, top = 8.dp)
-              )
-            }
-          }
-        }
-
-        item(key = "Spacer") {  // TODO string resource
-          Spacer(Modifier.height(64.dp))
-        }
-      }
+//      LazyColumn(state = lazyListState) {
+//        rooms[currentRoom]?.let {
+//          items(it.messages) { message ->
+//            Row(
+//              horizontalArrangement = if (message.author.id == me.id) Arrangement.End else Arrangement.Start,
+//              modifier = Modifier
+//                .fillMaxWidth()
+//                .padding(bottom = 4.dp)
+//            ) {
+//              if (message.author.id != me.id) {
+//                //Icon(Icons.Default.AccountCircle, null, Modifier.padding(start=16.dp) )
+//                OutlinedCard(Modifier.padding(top = 8.dp, start = 8.dp)) {
+//                  Text(
+//                    message.author.name,
+//                    Modifier.padding(
+//                      start = 4.dp,
+//                      end = 4.dp,
+//                      top = 2.dp,
+//                      bottom = 2.dp
+//                    )
+//                  )
+//                }
+//              }
+//
+//              Text(
+//                text = message.data,
+//                textAlign = TextAlign.Start,
+//                modifier = Modifier
+//                  .padding(start = 8.dp, top = 8.dp)
+//              )
+//            }
+//          }
+//        }
+//
+//        item(key = "Spacer") {
+//          Spacer(Modifier.height(64.dp))
+//        }
+//      }
 
       // Send Message
       fun send() {
@@ -697,7 +595,7 @@ class MainActivity : ComponentActivity() {
       TextField(
         value = text,
         onValueChange = { text = it },
-        label = { Text("Send Message") },  // TODO string resource
+        label = { Text("Send Message") },  
         placeholder = { Text(stringResource(R.string.chat_placeholder)) },
 
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -725,7 +623,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun LimitText(length: Int, limit: Int) {
   Text(
-    text = "Limit: $length/$limit",  // TODO string resource
+    text = "Limit: $length/$limit",  
     textAlign = TextAlign.End,
     modifier = Modifier.fillMaxWidth()
   )

@@ -36,30 +36,43 @@ class RoomsAPI {
     }
   }
 
+  // Get User Nickname
+  fun getNickname(): String {
+    // TODO
+
+    return ""
+  }
+
+  // Set User Nickname
+  fun setNickname(newNickname: String) {
+    // TODO
+  }
+
   // Disconnect from the Server
   fun disconnect() {
     connection.isConnected = false
     socket.close(69, "f u")
   }
 
-  fun login(id: String, password: String) {
-    val okHttpClient = OkHttpClient()
-    val request = Request.Builder()
-      .post("{\"username\":\"$id\", \"password\":\"$password\"}".toRequestBody())
-      .url(url)
-      .build()
-
-    okHttpClient.newCall(request).enqueue(object : Callback {
-      override fun onFailure(call: Call, e: IOException) {
-        // Handle this
-        throw Exception("POST Failure: ${e.message}")
-      }
-
-      override fun onResponse(call: Call, response: Response) {
-        // Handle this
-        throw Exception("POST Response: ${response.message}")
-      }
-  })
+  // Validate Connection (with Sign In Data)
+  fun validate(id: String, token: String) {
+//    val okHttpClient = OkHttpClient()
+//    val request = Request.Builder()
+//      .post("{\"username\":\"$id\", \"password\":\"$password\"}".toRequestBody())
+//      .url(url)
+//      .build()
+//
+//    okHttpClient.newCall(request).enqueue(object : Callback {
+//      override fun onFailure(call: Call, e: IOException) {
+//        // Handle this
+//        throw Exception("POST Failure: ${e.message}")
+//      }
+//
+//      override fun onResponse(call: Call, response: Response) {
+//        // Handle this
+//        throw Exception("POST Response: ${response.message}")
+//      }
+//  })
   }
 
   private class Listener(api: RoomsAPI) : WebSocketListener() {

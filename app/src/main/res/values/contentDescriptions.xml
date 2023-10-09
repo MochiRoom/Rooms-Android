@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cd_rooms_icon">Rooms Logo</string>
+    <string name="cd_join_room">Create/Join Room</string>
+</resources>
