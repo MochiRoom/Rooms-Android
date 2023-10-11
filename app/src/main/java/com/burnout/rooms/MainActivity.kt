@@ -6,7 +6,10 @@
 package com.burnout.rooms
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
+import android.graphics.Paint.Align
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -32,12 +35,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CardElevation
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
@@ -57,6 +64,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -78,6 +86,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.burnout.rooms.ui.theme.RoomsTheme
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -103,7 +113,6 @@ class MainActivity : ComponentActivity() {
   private lateinit var drawerState: DrawerState
   private lateinit var scope: CoroutineScope
 
-  // onCreate Function
   @SuppressLint("CoroutineCreationDuringComposition")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -115,8 +124,10 @@ class MainActivity : ComponentActivity() {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
           keyboardController = LocalSoftwareKeyboardController.current
 
+          user.StartAutoSave()
+
 //          LaunchThreads()
-//          server.connect()
+          server.connect()
 //          server.login("alma", "ko-rte")
 
           drawerState = rememberDrawerState(
@@ -143,18 +154,130 @@ class MainActivity : ComponentActivity() {
                       Modifier.fillMaxWidth(),
                       verticalAlignment = Alignment.CenterVertically
                     ) {
-                      // "Rooms" Icon
-                      Icon(
-                        painter = painterResource(R.drawable.ic_door),
-                        contentDescription = stringResource(R.string.cd_rooms_icon),
-                        modifier = Modifier
-                          .padding(10.dp)
-                          .size(32.dp)
+                      // TODO: Profile
+
+                      var accountDialog by remember { mutableStateOf(false) }
+
+                      // Account
+                      IconButton(
+                        content = {
+                          val iconSize = 42.dp
+                          if (user.state)
+                            AsyncImage(
+                              model = ImageRequest.Builder(context = LocalContext.current)
+                                .data(user.url)
+                                .build(),
+                              contentDescription = user.url,
+
+                              error = painterResource(R.drawable.google),
+                              placeholder = painterResource(R.drawable.ic_downloading),
+
+                              modifier = Modifier
+                                .size(iconSize)
+                                .clip(RoundedCornerShape(10.dp))
+                            )
+                          else
+                            Icon(Icons.Default.AccountBox, null, Modifier.size(iconSize))
+                        },
+                        onClick = { accountDialog = true },
+                        modifier = Modifier.padding(4.dp)
                       )
+
+                      // "Rooms" Icon
+//                      Icon(
+//                        painter = painterResource(R.drawable.ic_door),
+//                        contentDescription = stringResource(R.string.cd_rooms_icon),
+//                        modifier = Modifier
+//                          .padding(10.dp)
+//                          .size(32.dp)
+//                      )
+
+                      // TODO: account dialog
+
+                      if (accountDialog) {
+                        var newNickname by rememberSaveable { mutableStateOf(user.nickname) }
+                        val nicknameLimit = 16
+
+                        fun confirm() {
+                          if (newNickname.isBlank() && user.state && user.name.isNotBlank())
+                            user.nickname = user.name
+
+                          if (user.nickname != newNickname) {
+                            // Update Nickname
+                            // TODO: check server availability
+                            if (newNickname.isValid(nicknameLimit)) {
+                              user.nickname = newNickname
+
+                              // TODO: update nickname
+                              server.setNickname(user.nickname)
+                            }
+                          }
+
+                          accountDialog = false
+                        }
+
+                        CustomDialog(
+                          icon = Icons.Default.AccountCircle,
+                          heading = "My Account",
+                          onDismiss = { accountDialog = false },
+                          onConfirm = { confirm() },
+                          enableConfirm = newNickname.isNotBlank() || user.state
+                        ) {
+                          Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            // Set Nickname
+                            OutlinedTextField(
+                              value = newNickname,
+                              onValueChange = { newNickname = it },
+
+                              label = { Text("Nickname") },
+                              placeholder = { Text (user.name.ifBlank { "Pick Nick" }) },
+
+                              singleLine = true,
+
+                              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                              keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() }),
+
+                              modifier = Modifier
+                                .padding(top = 16.dp)
+                                .width(256.dp)
+                            )
+
+                            if (user.state) {
+                              Button(
+                                content = { Text("Sign Out") },
+                                onClick = { user.logout() },
+
+                                modifier = Modifier
+                                  .padding(top = 8.dp)
+                                  .width(256.dp)
+                              )
+                            } else {
+                              Button(
+                                content = {
+                                  Image(
+                                    painter = painterResource(R.drawable.google),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                      .padding(8.dp)
+                                      .size(16.dp)
+                                  )
+                                  Text("Sign In using Google")
+                                },
+
+                                onClick = { user.login() },
+
+                                modifier = Modifier
+                                  .padding(top = 8.dp)
+                                  .width(256.dp)
+                              )
+                            }
+                          }
+                        }
+                      }
 
                       // "Rooms" Heading
                       Text(
-                        stringResource(R.string.app_name),
+                        user.nickname.ifBlank { "Pick Nick" },
                         fontSize = 24.sp
                       )
 
@@ -234,6 +357,10 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  override fun onDestroy() {
+    super.onDestroy()
+  }
+
   @Deprecated("Deprecated in Java")
   override fun onBackPressed() {
     scope.launch { drawerState.open() }
@@ -246,7 +373,7 @@ class MainActivity : ComponentActivity() {
     connectionManager.launch {
       while (true) {
         try {
-          if (!server.connection.isConnected) server.connect()
+          if (!server.isConnected) server.connect()
         } catch (exception: Exception) {
           exception.message?.let { Log.w("RoomsAPI", it) }
         }
@@ -259,10 +386,6 @@ class MainActivity : ComponentActivity() {
   @Composable
   private fun UtilityBar() {
     var openedDialog by rememberSaveable { mutableStateOf(0) }
-    val isSignedIn by rememberUpdatedState(newValue = user.isSignedIn)
-    val displayName by rememberUpdatedState(newValue = user.credential?.displayName)
-
-    val iconSize = 32.dp
 
     // Icon Buttons
     Row(
@@ -274,43 +397,20 @@ class MainActivity : ComponentActivity() {
         .padding(start = 40.dp, end = 40.dp)
         .wrapContentHeight(Alignment.Bottom)
     ) {
-      // Account
-      IconButton(
-        content = {
-          if (isSignedIn)
-              AsyncImage(
-                model = ImageRequest.Builder(context = LocalContext.current)
-                  .data(user.credential!!.profilePictureUri)
-                  .build(),
-                contentDescription = user.credential!!.profilePictureUri?.toString(),
-
-                error = painterResource(R.drawable.google),
-                placeholder = painterResource(R.drawable.ic_downloading),
-
-                modifier = Modifier
-                  .size(iconSize)
-                  .clip(RoundedCornerShape(10.dp))
-              )
-          else
-            Icon(Icons.Default.AccountCircle, null, Modifier.size(iconSize))
-        },
-        onClick = { openedDialog = 10 }
-      )
-
       // Settings Button
       IconButton(
-        content = { Icon(Icons.Default.Settings, null, Modifier.size(iconSize)) },
+        content = { Icon(Icons.Default.Settings, null) },
         onClick = { openedDialog = 100 }
       )
 
       // Open Homepage Button
       IconButton(
-        content = { Icon(painterResource(R.drawable.ic_open_in_browser), null, Modifier.size(iconSize)) },
+        content = { Icon(painterResource(R.drawable.ic_open_in_browser), null) },
         onClick = {
           startActivity(
             Intent(
               Intent.ACTION_VIEW,
-              Uri.parse(getString(R.string.chat_webpage))
+              Uri.parse(getString(R.string.url_chat))
             )
           )
         }
@@ -319,7 +419,7 @@ class MainActivity : ComponentActivity() {
       if (BuildConfig.DEBUG) {
         // DevMode Button
         IconButton(
-          content = { Icon(Icons.Default.Build, null, Modifier.size(iconSize)) },
+          content = { Icon(Icons.Default.Build, null) },
           onClick = { openedDialog = 1000 }
         )
       }
@@ -331,82 +431,7 @@ class MainActivity : ComponentActivity() {
 
       // Account
       10 -> {
-        var newNickname by rememberSaveable { mutableStateOf(user.nickname) }
-        val nicknameLimit = 16
-
-        fun confirm() {
-          if (newNickname.isBlank() && user.credential != null && user.credential?.displayName != null)
-            user.nickname = user.credential?.displayName!!
-
-          if (user.nickname != newNickname) {
-            // Update Nickname
-            // TODO: check server availability
-            if (newNickname.isValid(nicknameLimit)) {
-              user.nickname = newNickname
-              server.setNickname(user.nickname)
-            }
-          }
-
-          openedDialog = 0
-        }
-
-        CustomDialog(
-          icon = Icons.Default.AccountCircle,
-          heading = "My Account",
-          onDismiss = { openedDialog = 0 },
-          onConfirm = { confirm() },
-          enableConfirm = newNickname.isNotBlank() || isSignedIn
-        ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // Set Nickname
-            OutlinedTextField(
-              value = newNickname,
-              onValueChange = { newNickname = it },
-
-              label = { Text("Nickname") },
-              placeholder = { Text (if (displayName != null) displayName!! else "Pick Nick") },
-
-              singleLine = true,
-
-              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-              keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() }),
-
-              modifier = Modifier
-                .padding(top = 16.dp)
-                .width(256.dp)
-            )
-
-            if (isSignedIn) {
-              Button(
-                content = { Text("Sign Out") },
-                onClick = { user.logout() },
-
-                modifier = Modifier
-                  .padding(top = 8.dp)
-                  .width(256.dp)
-              )
-            } else {
-              Button(
-                content = {
-                  Image(
-                    painter = painterResource(R.drawable.google),
-                    contentDescription = null,
-                    modifier = Modifier
-                      .padding(8.dp)
-                      .size(16.dp)
-                  )
-                  Text("Sign In using Google")
-                },
-
-                onClick = { user.login() },
-
-                modifier = Modifier
-                  .padding(top = 8.dp)
-                  .width(256.dp)
-              )
-            }
-          }
-        }
+        // TODO
       }
 
       // Settings
@@ -533,9 +558,29 @@ class MainActivity : ComponentActivity() {
   private fun RoomChat(currentRoom: String) {
     var text by rememberSaveable { mutableStateOf("") }
     val lazyListState = rememberLazyListState()
+    
+    val isConnected by rememberUpdatedState(newValue = server.isConnected)
 
     Box(modifier = Modifier.fillMaxSize())
     {
+      // "Connecting..." Card
+      if (!isConnected) {
+        Card (
+          modifier = Modifier
+            .padding(top = 16.dp)
+            .fillMaxSize()
+            .wrapContentWidth(Alignment.CenterHorizontally)
+            .wrapContentHeight(Alignment.Top)
+        ) {
+          Row (verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(
+              Modifier
+                .size(40.dp)
+                .padding(8.dp))
+            Text("Connecting...", Modifier.padding(8.dp))
+          }
+        }
+      }
       // Chat Box
 //      LazyColumn(state = lazyListState) {
 //        rooms[currentRoom]?.let {
@@ -599,13 +644,13 @@ class MainActivity : ComponentActivity() {
         placeholder = { Text(stringResource(R.string.chat_placeholder)) },
 
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-        keyboardActions = KeyboardActions(onSend = { if (server.connection.isConnected) send() }),
+        keyboardActions = KeyboardActions(onSend = { if (isConnected) send() }),
 
         trailingIcon = {
           IconButton(
             content = { Icon(Icons.Default.Send, null) },
             onClick = { send() },
-            enabled = server.connection.isConnected
+            enabled = isConnected
           )
         },
 

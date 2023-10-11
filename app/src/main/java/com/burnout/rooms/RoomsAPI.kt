@@ -1,5 +1,6 @@
 package com.burnout.rooms
 
+import android.util.Log
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
@@ -16,23 +17,20 @@ data class ConnectionData(
   var isConnected: Boolean = false
 )
 
-class RoomsAPI {
-  var connection: ConnectionData = ConnectionData()
-
-  var url = "chat.toaster.hu"
+class RoomsAPI(private val url: String = "chat.toaster.hu", private val wsPort: Int = 443) {
+  var isConnected: Boolean = false
 
   // Networking
   private val client = OkHttpClient()
   private lateinit var socket: WebSocket
 
   // Connect to Server
-  fun connect(websocketPort: Int = 443) {
-    connection = ConnectionData(url, websocketPort)
+  fun connect() {
     try {
-      val request = Request.Builder().url("ws://$url:${connection.websocketPort}").build()
+      val request = Request.Builder().url("ws://$url:${wsPort}").build()
       socket = client.newWebSocket(request, Listener(this@RoomsAPI))
     } finally {
-      throw Exception("Connection Failed")
+      Log.e("RoomsAPI", "Connection Failed")
     }
   }
 
@@ -50,29 +48,30 @@ class RoomsAPI {
 
   // Disconnect from the Server
   fun disconnect() {
-    connection.isConnected = false
+    isConnected = false
     socket.close(69, "f u")
   }
 
   // Validate Connection (with Sign In Data)
   fun validate(id: String, token: String) {
-//    val okHttpClient = OkHttpClient()
-//    val request = Request.Builder()
-//      .post("{\"username\":\"$id\", \"password\":\"$password\"}".toRequestBody())
-//      .url(url)
-//      .build()
-//
-//    okHttpClient.newCall(request).enqueue(object : Callback {
-//      override fun onFailure(call: Call, e: IOException) {
-//        // Handle this
-//        throw Exception("POST Failure: ${e.message}")
-//      }
-//
-//      override fun onResponse(call: Call, response: Response) {
-//        // Handle this
-//        throw Exception("POST Response: ${response.message}")
-//      }
-//  })
+    val okHttpClient = OkHttpClient()
+    val request = Request.Builder()
+      .post("{\"id\":\"$id\", \"token\":\"$token\"}".toRequestBody())
+      .url(url)
+      .build()
+
+    okHttpClient.newCall(request).enqueue(object : Callback {
+      override fun onFailure(call: Call, e: IOException) {
+        Log.e("RoomsAPI", "Post Failure: ${e.message}")
+        // TODO
+      }
+
+      override fun onResponse(call: Call, response: Response) {
+        Log.d("RoomsAPI", "Post Response: ${response.message}")
+        socket.send("{\"id\":\"${response.message}\"}")
+        // TODO
+      }
+    })
   }
 
   private class Listener(api: RoomsAPI) : WebSocketListener() {
@@ -80,7 +79,7 @@ class RoomsAPI {
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
 //      println("RoomsAPI: Connection opened")
-      server.connection.isConnected = true
+      server.isConnected = true
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
@@ -91,11 +90,11 @@ class RoomsAPI {
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-      server.connection.isConnected = false
+      server.isConnected = false
     }
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-      server.connection.isConnected = false
+      server.isConnected = false
     }
   }
 }

@@ -3,7 +3,7 @@
     <string name="connecting">Connecting…</string>
     <string name="chat_placeholder">holder place</string>
 
-    <string name="chat_webpage" translatable="false">http://chat.toaster.hu</string>
+    <string name="url_chat" translatable="false">https://chat.toaster.hu</string>
 
     <string name="client_id" translatable="false">108353847450-6nsoh0m0rcnknqnm4uvva4uepotrk615.apps.googleusercontent.com</string>
 </resources>
